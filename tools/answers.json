@@ -1,0 +1,292 @@
+{
+  "answers": {
+    "Q1": {
+      "choices": [],
+      "free": "我觉得场景我们肯定都会面对到 但是一开始面对的可以是a和b 现阶段我对c和d的思路是只检测和弦和节奏对不对稳不稳",
+      "raw": "我觉得场景我们肯定都会面对到，但是一开始面对的可以是A和B，现阶段我对C和D的思路是只检测和弦和节奏对不对稳不稳",
+      "accepted": false,
+      "recommend_at_answer_time": "A,B",
+      "at": "2026-09-24 17:05"
+    },
+    "Q2": {
+      "choices": [
+        "a"
+      ],
+      "free": "看手型就不必了 这条路检测重点放在音频上 c均可 如果有变化我会告诉你",
+      "raw": "看手型就不必了，这条路检测重点放在音频上，A、C均可，如果有变化我会告诉你",
+      "accepted": false,
+      "recommend_at_answer_time": "A,B,C",
+      "at": "2026-09-24 17:06"
+    },
+    "Q3": {
+      "choices": [],
+      "free": "同一个作业只要过了就不提示去做了 取b",
+      "raw": "同一个作业只要过了就不提示去做了，取B",
+      "accepted": false,
+      "recommend_at_answer_time": "B",
+      "at": "2026-09-24 17:06"
+    },
+    "Q4": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "",
+      "accepted": true,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:07"
+    },
+    "Q5": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:07"
+    },
+    "Q6": {
+      "choices": [],
+      "free": "以吉他为准 我们面对的就是吉他",
+      "raw": "以吉他为准，我们面对的就是吉他",
+      "accepted": false,
+      "recommend_at_answer_time": "D",
+      "at": "2026-09-24 17:07"
+    },
+    "Q7": {
+      "choices": [],
+      "free": "按照实际弹奏的顺序来定",
+      "raw": "按照实际弹奏的顺序来定",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:07"
+    },
+    "Q8": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:08"
+    },
+    "Q9": {
+      "choices": [],
+      "free": "允许整体有变化 不严格要求与原曲原速完全一致 但是不能差太多 同时如果一会快一会慢（很明显的） 是要提示用户节奏不稳的",
+      "raw": "允许整体有变化，不严格要求与原曲原速完全一致，但是不能差太多，同时如果一会快一会慢（很明显的），是要提示用户节奏不稳的",
+      "accepted": false,
+      "recommend_at_answer_time": "B",
+      "at": "2026-09-24 17:08"
+    },
+    "Q10": {
+      "choices": [],
+      "free": "音频进来先自动分析：只有吉他就不用分离；发现还有别的（伴奏 / 人声 / 其他乐器）就自动分离。不给用户开关——让系统自己判断，这样才够 AI。",
+      "raw": "",
+      "accepted": false,
+      "recommend_at_answer_time": "C",
+      "at": "2026-09-28 10:53"
+    },
+    "Q11": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "B",
+      "at": "2026-09-24 17:09"
+    },
+    "Q12": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:10"
+    },
+    "Q13": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:10"
+    },
+    "Q14": {
+      "choices": [
+        "b"
+      ],
+      "free": "",
+      "raw": "",
+      "accepted": true,
+      "recommend_at_answer_time": "B",
+      "at": "2026-09-24 17:10"
+    },
+    "Q15": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:11"
+    },
+    "Q16": {
+      "choices": [],
+      "free": "多音会判定 这个我会在guitarfollow里面跟进 有结果就同步",
+      "raw": "多音会判定，这个我会在GuitarFollow里面跟进，有结果就同步",
+      "accepted": false,
+      "recommend_at_answer_time": "D",
+      "at": "2026-09-24 17:11"
+    },
+    "Q17": {
+      "choices": [],
+      "free": "都报。我理解的漏弹是一个音漏了 这个有很多情况 有可能是用户漏了也有可能是我们检测失误了 所以我们要有限度 对着标准答案在专门的区域去找 比如漏弹多了就报 漏弹一次而且后面都对上了 就不报",
+      "raw": "都报。我理解的漏弹是一个音漏了，这个有很多情况，有可能是用户漏了也有可能是我们检测失误了，所以我们要有限度，对着标准答案在专门的区域去找，比如漏弹多了就报，漏弹一次而且后面都对上了，就不报",
+      "accepted": false,
+      "recommend_at_answer_time": "C",
+      "at": "2026-09-24 17:14"
+    },
+    "Q18": {
+      "choices": [],
+      "free": "这个问题我的想法是 如果中间明显的停顿了 比如换和弦犹豫了 我们可以用virtucoach那一套思路 在正常演奏段 用节拍网格看节奏是否准确。即：报哪里弹慢了或者弹快了 哪些地方节奏不稳。如果用户的bpm差一点点不要报了 只报那种用户能明显感觉到的",
+      "raw": "这个问题我的想法是，如果中间明显的停顿了，比如换和弦犹豫了，我们可以用VirtuCoach那一套思路，在正常演奏段，用节拍网格看节奏是否准确。即：报哪里弹慢了或者弹快了，哪些地方节奏不稳。如果用户的bpm差一点点不要报了，只报那种用户能明显感觉到的",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:16"
+    },
+    "Q19": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:16"
+    },
+    "Q20": {
+      "choices": [],
+      "free": "这个是不允许的 要提示用户 弹错了也继续弹 不要断",
+      "raw": "这个是不允许的，要提示用户，弹错了也继续弹，不要断",
+      "accepted": false,
+      "recommend_at_answer_time": "B",
+      "at": "2026-09-24 17:17"
+    },
+    "Q21": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:17"
+    },
+    "Q22": {
+      "choices": [],
+      "free": "目前的想法是 作业检查是另外一个端口的任务 我们还是点击按钮跳转 输出的内容是总体评价和打分 打分和完成度超过多少就算完成作业 后续有改变我会再说",
+      "raw": "目前的想法是，作业检查是另外一个端口的任务，我们还是点击按钮跳转，输出的内容是总体评价和打分，打分和完成度超过多少就算完成作业，后续有改变我会再说",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:20"
+    },
+    "Q23": {
+      "choices": [
+        "c"
+      ],
+      "free": "",
+      "raw": "",
+      "accepted": true,
+      "recommend_at_answer_time": "C",
+      "at": "2026-09-24 17:23"
+    },
+    "Q24": {
+      "choices": [
+        "a"
+      ],
+      "free": "完美也可以给100 满足一下虚荣心",
+      "raw": "A，完美也可以给100，满足一下虚荣心",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:24"
+    },
+    "Q25": {
+      "choices": [],
+      "free": "选b",
+      "raw": "选b",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:24"
+    },
+    "Q26": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "A、C",
+      "accepted": false,
+      "recommend_at_answer_time": "C",
+      "at": "2026-09-24 17:25"
+    },
+    "Q27": {
+      "choices": [],
+      "free": "我们单独做音频检测 有时间降噪 方法可以学习guitarfollow 甚至可以更严格",
+      "raw": "我们单独做音频检测，有时间降噪，方法可以学习GuitarFollow 甚至可以更严格",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:25"
+    },
+    "Q28": {
+      "choices": [
+        "a"
+      ],
+      "free": "具体提示内容待定",
+      "raw": "A 具体提示内容待定",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:26"
+    },
+    "Q29": {
+      "choices": [
+        "a"
+      ],
+      "free": "",
+      "raw": "",
+      "accepted": true,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:26"
+    },
+    "Q30": {
+      "choices": [],
+      "free": "这个项目有自己的文件夹 他收到的音频库是他自己的 后面我们还要一个曲谱库是他和guitarfollow公用的",
+      "raw": "这个项目有自己的文件夹，他收到的音频库是他自己的，后面我们还要一个曲谱库是他和GuitarFollow公用的",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:27"
+    },
+    "Q31": {
+      "choices": [],
+      "free": "选b",
+      "raw": "选B",
+      "accepted": false,
+      "recommend_at_answer_time": "A",
+      "at": "2026-09-24 17:27"
+    },
+    "Q32": {
+      "choices": [],
+      "free": "先清楚要做什么 做一个可看的小demo出来。做出来的就是：这节课作业是hey jude 给按钮可以上传 就可以了",
+      "raw": "先清楚要做什么，做一个可看的小demo出来。做出来的就是：这节课作业是Hey Jude，给按钮可以上传，就可以了",
+      "accepted": false,
+      "recommend_at_answer_time": "D,A",
+      "at": "2026-09-24 17:29"
+    }
+  }
+}

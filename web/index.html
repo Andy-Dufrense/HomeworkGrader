@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>作业检查 · HomeworkGrader</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">🎸</span>
+    <span class="brand-text">
+      作业检查
+      <em>HomeworkGrader</em>
+    </span>
+  </div>
+  <div class="course" id="course">—</div>
+</header>
+
+<div class="banner" id="demoBanner" hidden>
+  <b>这是 demo</b>
+  <span id="demoBannerText">批改引擎还没接上，页面上的数字来自真实素材的实测。</span>
+</div>
+
+<main>
+
+  <!-- 三步流程 -->
+  <ol class="steps" id="steps">
+    <li class="step is-on" data-step="1"><b>1</b><span>交作业</span></li>
+    <li class="step" data-step="2"><b>2</b><span>老师批改</span></li>
+    <li class="step" data-step="3"><b>3</b><span>看结果</span></li>
+  </ol>
+
+  <!-- 本节作业 -->
+  <section class="card">
+    <div class="assign-head">
+      <div>
+        <p class="eyebrow">本节作业</p>
+        <h1 id="title">—</h1>
+        <p class="sub" id="subtitle">—</p>
+      </div>
+      <span class="pill" id="passline">—</span>
+    </div>
+    <dl class="facts">
+      <div><dt>标准答案</dt><dd id="track">—</dd></div>
+      <div><dt>速度</dt><dd id="bpm">—</dd></div>
+      <div><dt>长度</dt><dd id="measures">—</dd></div>
+    </dl>
+    <p class="src" id="source">—</p>
+  </section>
+
+  <!-- 录制要求（铁律 Q28）-->
+  <section class="card">
+    <h2 class="card-title">录之前看一眼</h2>
+    <ul class="tips" id="tips"></ul>
+  </section>
+
+  <!-- ① 交作业 -->
+  <section class="card" id="uploadCard">
+    <h2 class="card-title"><span class="n">①</span>交作业</h2>
+
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="audio/*,video/mp4" hidden>
+      <span class="drop-ico" aria-hidden="true">🎧</span>
+      <span class="drop-main">点这里选录音，或拖进来</span>
+      <span class="drop-sub">mp3 / m4a / wav 都行；交视频也会自动抽音频</span>
+    </label>
+
+    <div class="chosen" id="chosen" hidden>
+      <span class="chosen-name" id="chosenName">—</span>
+      <button type="button" class="link-btn" id="clearFile">换一个</button>
+    </div>
+
+    <div class="or"><span>或者贴一条音频直链</span></div>
+    <label class="field">
+      <span class="field-label">音频直链</span>
+      <input type="url" id="url" placeholder="https://…/我的演奏.mp3">
+    </label>
+
+    <button class="primary" id="submit" disabled>提交批改</button>
+    <p class="hint" id="submitHint">先选一个文件，或贴一条直链</p>
+  </section>
+
+  <!-- ② 批改中 -->
+  <section class="card" id="progressCard" hidden>
+    <h2 class="card-title"><span class="n">②</span>老师正在听…</h2>
+    <div class="bar"><i id="bar"></i></div>
+    <p class="stage" id="stage" aria-live="polite">—</p>
+  </section>
+
+  <!-- ③ 结果 -->
+  <section class="card" id="resultCard" hidden>
+    <h2 class="card-title"><span class="n">③</span>结果</h2>
+
+    <div class="score-row">
+      <div class="score-box">
+        <div class="score" id="score">—</div>
+        <div class="score-cap">得分</div>
+      </div>
+      <div class="score-side">
+        <p class="verdict" id="verdict">—</p>
+        <div class="line"><span>完成度</span><b id="coverage">—</b></div>
+        <div class="line"><span>正确率</span><b id="accuracy">—</b></div>
+      </div>
+    </div>
+
+    <div class="counts" id="counts"></div>
+    <p class="summary" id="summary">—</p>
+
+    <h3 class="sub-title">对到谱面上是这样</h3>
+    <div class="chart-wrap"><svg id="chart" viewBox="0 0 720 170" preserveAspectRatio="none" role="img" aria-label="谱面与错误的对照图"></svg></div>
+    <div class="legend">
+      <span><i class="sw gray"></i>谱面应该弹的</span>
+      <span><i class="sw red"></i>没对上</span>
+      <span><i class="sw line"></i>小节线</span>
+    </div>
+
+    <h3 class="sub-title">要改的地方（<span id="issueCount">0</span> 处）</h3>
+    <div id="issues"></div>
+
+    <button class="ghost" id="again">再交一次</button>
+  </section>
+
+  <p class="foot" id="demoNote"></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

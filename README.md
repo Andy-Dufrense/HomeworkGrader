@@ -1,0 +1,76 @@
+# HomeworkGrader · 作业检查
+
+VirtuCoach 的「作业检查」模块：课程 → 每节课一份作业（**Guitar Pro 谱面当标准答案**）→
+学员交音频 → 对着标准答案批改 → 出**总体评价 + 打分 + 完成度**。
+学员从 VirtuCoach 点「📝 作业检查」按钮跳过来（独立服务、独立端口）。
+
+## 怎么跑
+
+```bat
+start.bat              :: 起服务（默认 1310），自己把地址打给你；不会自动开浏览器
+start.bat 1311         :: 换端口
+start.bat -o           :: 可选：用 Edge/Chrome 打开（绝不会走 IE）
+```
+
+打开 `http://localhost:1310`。
+
+> 默认**不自动开浏览器**：这台机器的系统 http handler 是 Internet Explorer，打不开这个页面。
+
+## 跑一次真正的批改（命令行）
+
+```bat
+E:\Python\python.exe -X utf8 homework\run_assignment.py ^
+  --ref   E:\GuitarFollowLab\frontend\data\chord_arp.json ^
+  --audio E:\GuitarFollowLab\sound_data\f32\6415\6415慢速.f32 ^
+  --job   6415 --engine follow
+```
+
+链路（铁律 Q15 / Q29）：
+
+```
+参考谱面(.gp → 时间轴)
+  → 起音           Node 子进程，跑跟弹产品页自己的链路（引擎只有那一份代码）
+  → 对齐           身份锚定优先；读不出音高时退回按时间对齐（并标低置信度）
+  → 判定           Node 子进程，逐音问"我要的这个音在不在这一下"
+  → 逐音对错 → 按 Q17 聚合 → 按 Q24 打分 → data/jobs/<id>/result.json
+```
+
+**注意**：`--engine follow` 会调用隔壁的 `E:\GuitarFollowLab`（路径可用环境变量
+`GUITARFOLLOW_REPO` 覆盖）。
+
+## 现在到哪儿了
+
+| 环节 | 状态 |
+|---|---|
+| 口径问答（32 题）／铁律 | ✅ `IRON-RULES.md`（32/32） |
+| 竞品与论文调研 | ✅ `调研-作业检查-竞品与论文-2026-09-24.md` |
+| 对齐（身份锚定 + 单调 DP + 置信度） | ✅ `homework/align.py`，合成回归 26 项全过 |
+| 逐音比对 / 聚合 / 打分 | ✅ `homework/grade.py` + `run_assignment.py` |
+| 前端（三步流程 + 结果页） | ✅ `web/`，自检 11 项全过（`tools/shot_web.py`） |
+| 首次真机实测 | ✅ 6415 分解和弦：起音 55 ｜ 对 30 / 错 3 / 漏 0 |
+| 引擎接入方式 | ✅ 走跟弹产品页那条链路（自己拼 engine 调用数字对不上，已放弃） |
+| 音轨分离（自动判断）／降噪／节奏网格／报告话术 | 🔜 还没做 |
+
+## 文档在哪
+
+| 文件 | 是什么 |
+|---|---|
+| `IRON-RULES.md` | **32 条铁律**（用户逐条定的口径，由 `tools/ask.py` 生成，别手改） |
+| `思路.md` | 按铁律写的设计：产品形态、链路、目录、边界、开工顺序 |
+| `三个项目的关系.md` | 它和 VirtuCoach / GuitarFollowLab 谁是谁、谁连谁、谁能改什么 |
+| `实测-对齐-2026-09-24.md` | 第一次对齐实测（为什么不能"只看时间"） |
+| `调研-作业检查-竞品与论文-2026-09-24.md` | SmartMusic / MatchMySound 等竞品 + 12 篇论文 |
+
+要改口径：重跑 `tools/ask.py` 重答那一题，**不要直接改铁律文件**。
+
+## 目录
+
+```
+homework/    服务端与算法（align / grade / run_assignment / server / 两个 Node 引擎桥）
+web/         前端（index.html / style.css / app.js）
+tools/       口径问答、对齐探针、合成回归、前端截图自检
+data/        音频库与批改中间产物（不进 git）
+scores/      与 GuitarFollow 共用的曲谱库（.gp 不进 git）
+```
+
+`data/` 和 `scores/` 里的东西**都不进 git**（学员隐私 + 谱面版权），见 `.gitignore`。
