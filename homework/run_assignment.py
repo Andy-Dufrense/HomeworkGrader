@@ -55,8 +55,12 @@ TEMPO_TOL = 0.40          # 整体速度差超过 ±40% 才提
 PAUSE_OVER_SEC = 1.0      # 比谱面多停 1 秒以上，且
 PAUSE_RATIO = 1.8         # 超过谱面间隔的 1.8 倍，才算"明显停顿"
 DRIFT_RATIO = 1.25        # 后半段比前半段慢/快 25% 以上才算"一会快一会慢"
-TIMING_ABS_SEC = 0.20     # 节拍网格：单音偏差 ≥200ms 才算"明显"
-TIMING_BEAT_RATIO = 0.25  # 或者 ≥1/4 拍（快曲子按拍算更合理），两者取更严的
+# 节拍网格的容忍度 —— **照抄跟弹的规则**（judge-loop.js 224 行，用户 2026-09-23 定的）：
+#   容许偏差 = clamp(到下一个音的间隔 × 45%, 100ms, 350ms)，**第一个音翻倍**
+#   "跟得上比掐得准重要"。作业这边不再自造"200ms / 1/4 拍"那套。
+TIMING_FRAC = 0.45
+TIMING_MIN_MS = 100.0
+TIMING_MAX_MS = 350.0
 
 # 跟弹仓库（判定引擎的家）——铁律 Q15/Q29：起音与判定只有那一份代码
 FOLLOW_REPO = os.environ.get("GUITARFOLLOW_REPO", r"E:\GuitarFollowLab")
@@ -377,11 +381,27 @@ def find_pauses(ts, med_score_gap):
     return out
 
 
-def timing_marks(match, events, score, scale, offset, tempo):
+def timing_tolerance_ms(score, j):
+    """这个音容许早/晚多少毫秒 —— 照跟弹的规则（judge-loop.js 224 行）。
+
+    时值优先取"到下一个音的间隔"，最后一个音用它自己的时值；
+    夹在 100~350ms 之间，**第一个音宽容一倍**（起手那一下最难卡）。
+    """
+    cur = score[j]
+    nxt = score[j + 1] if j + 1 < len(score) else None
+    if nxt is not None:
+        ioi_ms = max(60.0, (nxt["t"] - cur["t"]) * 1000.0)
+    else:
+        ioi_ms = max(60.0, float(cur.get("dur") or 0.25) * 1000.0)
+    base = min(TIMING_MAX_MS, max(TIMING_MIN_MS, ioi_ms * TIMING_FRAC))
+    return base * 2 if j == 0 else base
+
+
+def timing_marks(match, events, score, scale, offset, tempo=None):
     """节拍网格：把每个音放进"谱面拍子 × 学员速度"的网格里，看它早了多少、晚了多少。
 
     Q18（用户口径）：在正常演奏段用节拍网格看节奏准不准，**只报用户能明显感觉到的**
-    （BPM 差一点点不报）。门槛用 200ms 或 1/4 拍里更严的那个（快曲子按拍算更合理）：
+    （BPM 差一点点不报）。门槛直接用**跟弹那条容忍度规则**（timing_tolerance_ms）：
 
         dev = 这一下的实际时刻 − （谱面这一拍的时刻 × 学员速度 + 整体位移）
 
@@ -390,18 +410,18 @@ def timing_marks(match, events, score, scale, offset, tempo):
     节奏**不吃分**（Q9/Q18：整体变速允许、抢拖只提示），只标在谱面上、列进清单。
     """
     beat = 60.0 / float(tempo or 80)
-    thr = min(TIMING_ABS_SEC, beat * TIMING_BEAT_RATIO)
     out = []
     for j, i in sorted(match.items()):
         want = scale * score[j]["t"] + offset
         dev = events[i]["t"] - want
-        if abs(dev) < thr:
+        tol_ms = timing_tolerance_ms(score, j)
+        if abs(dev) * 1000.0 <= tol_ms:
             continue
         out.append({"kind": "timing", "sub": "late" if dev > 0 else "early",
                     "note_index": j + 1, "t_audio": round(events[i]["t"], 2),
                     "t_score": round(float(score[j]["t"]), 2),
                     "dev": round(dev, 2), "dev_beats": round(dev / beat, 2),
-                    "beat_sec": round(beat, 3)})
+                    "beat_sec": round(beat, 3), "tol_ms": round(tol_ms)})
     return out
 
 
@@ -862,9 +882,10 @@ def main(argv=None):
                 title = "本段第 %d 个音" % (j + 1)
             sub = m.get("sub")
             if sub in ("early", "late"):
-                detail = ("这里%s了 %.2f 秒（约 %.2f 拍）—— 对着节拍器再走一遍就顺了。"
+                detail = ("这里%s了 %.2f 秒（约 %.2f 拍，容许 ±%dms）—— 对着节拍器再走一遍就顺了。"
                           % ("抢" if sub == "early" else "拖",
-                             abs(m.get("dev") or 0), abs(m.get("dev_beats") or 0)))
+                             abs(m.get("dev") or 0), abs(m.get("dev_beats") or 0),
+                             m.get("tol_ms") or 0))
             else:
                 detail = "这里停了约 %.1f 秒（弹错了也接着往下，别停）。" % (m.get("seconds") or 0)
             issues.append({
@@ -905,8 +926,13 @@ def main(argv=None):
         if n_timing:
             # 有抢拍/拖拍时，别提"整段速度和节奏是稳的"（自相矛盾）
             process = [p for p in process if not p.startswith("整段速度和节奏是稳的")]
-            process.append("节奏：有 %d 处明显抢拍/拖拍（都在下面清单里标着「节奏」）；"
-                           "节奏不吃分，整段的速度已经扣掉不算偏差了。" % n_timing)
+            tols = [m.get("tol_ms") or 0 for m in pinfo.get("timing_marks") or []
+                    if m.get("sub")]
+            process.append("节奏：抢拍 %d 处、拖拍 %d 处（容许 ±%d~%dms，按每个音自己的间隔算，"
+                           "头一个音翻倍）；节奏不吃分，整段速度已经扣掉不算偏差。"
+                           % (sum(1 for m in pinfo["timing_marks"] if m.get("sub") == "early"),
+                              sum(1 for m in pinfo["timing_marks"] if m.get("sub") == "late"),
+                              min(tols) if tols else 0, max(tols) if tols else 0))
         if rep.get("repeat"):
             process.insert(0, "你把作业弹了两遍：第二遍有 %d/%d 个音也对上了。"
                               "作业只需要一遍，多出来的第二遍没算进分数。"
