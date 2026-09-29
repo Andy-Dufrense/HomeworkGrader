@@ -595,7 +595,7 @@ def main(argv=None):
             "error_marks": result["error_marks"],
             "ref_crop": crop_desc, "ref_notes": len(score), "judged_slots": judged,
             "standard": standard,
-            "note": "数字来自跟弹产品页那条链路（同一份判定代码），用的是真实录音。"
+            "note": "数字来自跟弹产品页那条链路（同一份判定代码），用的是你这次交的录音。"
                     + tally_note,
         }
         with io.open(os.path.join(jobdir, "page.json"), "w", encoding="utf-8") as f:

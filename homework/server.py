@@ -14,6 +14,9 @@
 import io
 import json
 import os
+import re
+import subprocess
+import sys
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -70,6 +73,13 @@ REAL_RESULT = os.path.join(ROOT, "data", "jobs", JOB, "result.json")
 
 # 作业库：每次作业一个目录（homework/make_assignments.py 生成）
 ASSIGN_DIR = os.path.join(ROOT, "data", "assignments")
+# 学员交上来的音频（本项目自己的音频库，Q30），以及解码出来的裸 f32
+AUDIO_DIR = os.path.join(ROOT, "data", "audio")
+
+# 跑解码和判定链路的 python（跟本项目其它脚本同一个解释器）
+PY = os.environ.get("HOMEWORK_PYTHON", sys.executable)
+LIB = os.environ.get("GUITARFOLLOW_PYTHONPATH", r"E:\VirtuCoach-Lib")
+NEED_LIB = os.environ.get("HOMEWORK_AUDIO_PATH", r"E:\Lib\site-packages")
 
 RECORD_TIPS = [
     "戴耳机，别让伴奏被麦克风收进去",
@@ -222,23 +232,6 @@ def job_page(aid):
     return page
 
 
-def build_result_for(aid):
-    """给页面用的结果：有批改记录就给真报告，没有就说"这条还没收到录音"。"""
-    page = job_page(aid)
-    if page is not None:
-        return page
-    card = card_for(aid)
-    if card is None:
-        return build_sample_result()
-    return {
-        "no_audio": True,
-        "assignment": card,
-        "standard": (load_assignment(aid) or {}).get("standard") or {},
-        "note": "标准答案已经按老师那份 .gp 生成好了；这条作业还没有录音样例，"
-                "等真实录音进来就能批。",
-    }
-
-
 def load_real():
     """默认那一份（HOMEWORK_JOB）的批改结果；没有就 None。"""
     return job_page(JOB)
@@ -353,19 +346,87 @@ STAGES = [(0.8, "正在听：只有吉他，还是还有别的（决定要不要
           (0.6, "正在整理报告…")]
 
 
-def run_task(task_id, aid):
-    total = sum(s[0] for s in STAGES)
-    waited = 0.0
+def parse_multipart(raw, ctype):
+    """从 multipart/form-data 里把文件捞出来（标准库没现成的，手搓一段够用）。"""
+    m = re.search(r'boundary="?([^";]+)"?', ctype or "")
+    if not m:
+        return None, None
+    sep = b"--" + m.group(1).encode()
+    for part in raw.split(sep):
+        if b"filename=" not in part:
+            continue
+        head, _, body = part.partition(b"\r\n\r\n")
+        fm = re.search(rb'filename="([^"]*)"', head)
+        if not fm:
+            continue
+        name = fm.group(1).decode("utf-8", "replace") or "upload"
+        return os.path.basename(name), body.rstrip(b"\r\n-")
+    return None, None
+
+
+def _run(cmd, timeout, cwd=ROOT):
+    env = dict(os.environ)
+    env["PYTHONPATH"] = NEED_LIB + os.pathsep + LIB + os.pathsep + env.get("PYTHONPATH", "")
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", env=env, timeout=timeout)
+
+
+def grade_submission(task_id, aid, saved_path, name):
+    """真批改：解码 → 跑跟弹判定链路 → 把这一次的结果交给页面。
+
+    以前这里只是"播进度条 + 把上一次存好的结果端出来"（2026-09-29 用户实测发现：
+    传一个 9 字节的假文件也会得到同一份报告）。现在每一步都是真的：
+      data/audio/<作业>/<时间>_<原名>   原始文件（本项目自己的音频库）
+      data/audio/<作业>/<时间>.f32      48k 单声道（跟弹链路要的格式）
+      data/jobs/<作业>-<时间>/          这一次批改的中间产物和 page.json
+    """
+    upd = lambda **kw: TASKS[task_id].update(kw)          # noqa: E731
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    job_id = "%s-%s" % (aid, stamp)
+    outdir = os.path.join(AUDIO_DIR, aid)
+    os.makedirs(outdir, exist_ok=True)
+    f32 = os.path.join(outdir, stamp + ".f32")
     try:
-        for idx, (dur, text) in enumerate(STAGES):
-            time.sleep(dur)
-            waited += dur
-            TASKS[task_id].update({"stage": text, "stage_index": idx,
-                                   "progress": int(waited / total * 100)})
-        TASKS[task_id].update({"status": "completed", "progress": 100,
-                               "stage": "批改完成", "result": build_result_for(aid)})
+        upd(stage="已收到录音，正在解码（48k 单声道）…", stage_index=0, progress=8)
+        p = _run([PY, "-X", "utf8", os.path.join(HERE, "audio.py"), saved_path, f32], 600)
+        if p.returncode != 0:
+            return upd(status="failed", stage="音频解码失败：%s" % (p.stdout or p.stderr)[-200:])
+        secs = os.path.getsize(f32) / 4.0 / 48000.0
+
+        upd(stage="正在跑判定链路（起音 → 对齐 → 逐音判定）…", stage_index=1, progress=22)
+        cmd = [PY, "-X", "utf8", os.path.join(HERE, "run_assignment.py"),
+               "--assignment", aid, "--audio", f32, "--job", job_id, "--engine", "follow"]
+        # 判定要按录音时长跑（30 秒的录音约 9 秒）；一边跑一边把"哪一步"报出来
+        proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                encoding="utf-8", errors="replace",
+                                env=dict(os.environ, PYTHONPATH=NEED_LIB + os.pathsep + LIB))
+        tips = [(12, "正在找每一次拨弦（跟弹引擎）…", 1),
+                (40, "正在把录音和谱面对齐…", 2),
+                (60, "正在逐个音判定（跟弹引擎）…", 3)]
+        t0, tip = time.time(), 0
+        while proc.poll() is None:
+            waited = time.time() - t0
+            if waited > 1800:
+                proc.kill()
+                return upd(status="failed", stage="批改超时（录音太长？）")
+            while tip < len(tips) and waited >= tips[tip][0]:
+                upd(stage=tips[tip][1], stage_index=tips[tip][2],
+                    progress=min(88, 22 + tip * 12))
+                tip += 1
+            time.sleep(0.6)
+        out = proc.stdout.read() if proc.stdout else ""
+        if proc.returncode != 0:
+            return upd(status="failed", stage="判定链路失败：%s" % (out or "")[-300:])
+
+        upd(stage="正在整理报告…", stage_index=4, progress=94)
+        page = job_page(job_id)
+        if page is None:
+            return upd(status="failed", stage="这次没生成报告：%s" % (out or "")[-300:])
+        page["submitted"] = {"file": name, "seconds": round(secs, 1), "job": job_id}
+        upd(status="completed", progress=100, stage="批改完成", result=page)
     except Exception as e:                                   # 别把线程搞死
-        TASKS[task_id].update({"status": "failed", "stage": "批改失败：%s" % e})
+        upd(status="failed", stage="批改失败：%s" % e)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -445,14 +506,38 @@ class Handler(BaseHTTPRequestHandler):
             aid = JOB
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(n) if n else b""
-        # demo：不存文件，只记下「收到多大一坨」
         ctype = self.headers.get("Content-Type") or ""
-        info = {"bytes": len(raw), "kind": "link" if "json" in ctype else "file"}
         tid = uuid.uuid4().hex[:12]
-        TASKS[tid] = {"status": "running", "progress": 0, "stage": "已收到，排队中…",
+        if "json" in ctype:                     # 直链（页面上已经没有这个入口了，接口留着）
+            info = {"bytes": len(raw), "kind": "link"}
+            TASKS[tid] = {"status": "failed", "progress": 0, "assignment": aid,
+                          "stage": "这条链路只收上传的音频文件"}
+            return self._send(200, {"task_id": tid, "received": info})
+
+        name, payload = parse_multipart(raw, ctype)
+        if not payload:
+            TASKS[tid] = {"status": "failed", "progress": 0, "assignment": aid,
+                          "stage": "没收到音频文件"}
+            return self._send(200, {"task_id": tid, "received": {"bytes": len(raw)}})
+
+        outdir = os.path.join(AUDIO_DIR, aid)
+        try:
+            os.makedirs(outdir, exist_ok=True)
+            safe = re.sub(r"[^\w.\-]+", "_", name)[:60] or "upload"
+            saved = os.path.join(outdir, time.strftime("%Y%m%d-%H%M%S_") + safe)
+            with open(saved, "wb") as f:
+                f.write(payload)
+        except Exception as e:
+            # 存不下（磁盘/权限）就明说，别把请求线程搞崩
+            TASKS[tid] = {"status": "failed", "progress": 0, "assignment": aid,
+                          "stage": "存录音失败：%s" % e}
+            return self._send(200, {"task_id": tid, "received": {"bytes": len(payload)}})
+        info = {"bytes": len(payload), "kind": "file", "name": name, "saved": saved}
+        TASKS[tid] = {"status": "running", "progress": 3, "stage": "已收到录音，排队中…",
                       "submitted": info, "assignment": aid}
         import threading
-        threading.Thread(target=run_task, args=(tid, aid), daemon=True).start()
+        threading.Thread(target=grade_submission, args=(tid, aid, saved, name),
+                         daemon=True).start()
         return self._send(200, {"task_id": tid, "received": info})
 
 

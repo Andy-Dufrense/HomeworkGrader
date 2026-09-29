@@ -1,4 +1,4 @@
-// 作业检查的前端。流程按最终形态写：提交 → 轮询批改 → 出报告，
+﻿// 作业检查的前端。流程按最终形态写：提交 → 轮询批改 → 出报告，
 // 所以等真正的批改服务接上时，只换服务端，这个文件不用动。
 
 const $ = (id) => document.getElementById(id);
@@ -28,7 +28,7 @@ const el = {
   noAudio: $('noAudio'), reportBody: $('reportBody'),
   score: $('score'), verdict: $('verdict'),
   coverage: $('coverage'), accuracy: $('accuracy'), counts: $('counts'),
-  summary: $('summary'), process: $('process'), chart: $('chart'), issues: $('issues'),
+  summary: $('summary'), process: $('process'), issues: $('issues'),
   issueFold: $('issueFold'), foldSummary: $('foldSummary'),
   moreWrap: $('moreWrap'), moreCount: $('moreCount'), moreIssues: $('moreIssues'),
   again: $('again'), demoNote: $('demoNote'),
@@ -363,11 +363,14 @@ function render(r) {
   const a = r.assignment || meta;
   const std = r.standard || {};
 
+  const sub = r.submitted || {};
   const metaRows = [
     ['作业', a.title || '—'],
     ['标准答案', a.track || '—'],
     ['本次要弹', std.notes ? std.notes + ' 个音' : '—'],
-    ['提交内容', submittedLabel || '本机真机素材'],
+    ['提交内容', sub.file
+      ? (sub.file + (sub.seconds ? '（' + sub.seconds + ' 秒）' : ''))
+      : (submittedLabel || '本机真机素材')],
   ];
   el.reportMeta.innerHTML = metaRows
     .map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>')
@@ -432,7 +435,6 @@ function render(r) {
   el.moreCount.textContent = more.length;
   renderMoreIssues(more);
   el.demoNote.textContent = r.note;
-  drawChart(r);
   // 出结果之后才把谱面画出来，并把没对上的地方框红（交作业前不看谱，练去跟练页）
   renderScore(r.standard || currentStd, r.error_notes || []);
   el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -455,60 +457,4 @@ function issueTime(it) {
   return parts.join(' · ') || '—';
 }
 
-// 谱面滚轴图：横轴 = 音频秒数，纵轴 = 第几弦（1 弦在最上面，和琴上一致）
-function drawChart(r) {
-  const notes = r.score_notes || [];
-  const marks = r.error_marks || [];
-  const OFF = (r.offset == null) ? 2.5 : Number(r.offset);
-  const lastT = notes.length ? (+notes[notes.length - 1].t + OFF) : 30;
-  const T0 = OFF, T1 = Math.max(OFF + 4, Math.min(60, Math.ceil(lastT)));
-  const W = 720, H = 170, padL = 40, padR = 10, padT = 12, padB = 26;
-  const x = (t) => padL + (t - T0) / (T1 - T0) * (W - padL - padR);
-  const y = (s) => padT + (s - 1) / 5 * (H - padT - padB);
-  const parts = [];
-
-  // 六条弦 + 弦号
-  for (let s = 1; s <= 6; s++) {
-    parts.push(`<line x1="${padL}" y1="${y(s)}" x2="${W - padR}" y2="${y(s)}" stroke="#e8eef3" stroke-width="1"/>`);
-    parts.push(`<text x="${padL - 6}" y="${y(s) + 3}" font-size="10" fill="#8b97a6" text-anchor="end">${s}弦</text>`);
-  }
-  // 小节线（76 BPM 4/4）
-  const bpm = Number(meta.bpm) || 76;
-  const bar = 60 / bpm * 4;
-  for (let t = 0; t + OFF <= T1; t += bar) {
-    const xx = x(t + OFF);
-    if (xx < padL) continue;
-    parts.push(`<line x1="${xx.toFixed(1)}" y1="${padT}" x2="${xx.toFixed(1)}" y2="${H - padB}" stroke="#bcd2ee" stroke-width="1" stroke-dasharray="3 3"/>`);
-    parts.push(`<text x="${(xx + 3).toFixed(1)}" y="${H - 8}" font-size="9" fill="#9aa8b8">${Math.round(t / bar) + 1}</text>`);
-  }
-  // 谱面音
-  const errT = new Set(marks.map(m => (+m.t).toFixed(2)));
-  const errIdx = new Set(marks.filter(m => m.idx != null).map(m => +m.idx));
-  notes.forEach(n => {
-    const t = +n.t + OFF;
-    if (t < T0 || t > T1) return;
-    // 优先按"第几个音"对上（判定记录里给的就是这个）；没有才退回按时刻比
-    const bad = (n.idx != null && errIdx.size) ? errIdx.has(+n.idx) : errT.has((+n.t).toFixed(2));
-    const cx = x(t) - 5, cy = y(n.string) - 5;
-    parts.push(`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="10" height="10" rx="3" fill="${bad ? '#b42318' : '#c3ced7'}"/>`);
-  });
-  // 时间轴
-  [5, 10, 15, 20, 25].forEach(t => {
-    parts.push(`<text x="${x(t).toFixed(1)}" y="${H - 8}" font-size="9" fill="#9aa8b8" text-anchor="middle">${t}s</text>`);
-  });
-  el.chart.innerHTML = parts.join('');
-  el.chart.setAttribute('aria-label',
-    `谱面共 ${notes.length} 个音，其中 ${marks.length} 个未对上。`);
-}
-
-el.again.addEventListener('click', () => {
-  show(el.resultCard, false);
-  show(el.progressCard, false);
-  setPicked(null);
-  submittedLabel = '';
-  goStep(1);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-});
-
-goStep(1);
 refreshSubmit();
