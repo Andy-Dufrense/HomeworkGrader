@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""给作业检查的页面拍两张图：交作业那屏、出结果那屏（顺便抓 JS 报错）。
+"""作业检查前端的**自检**：跑一遍"提交 → 批改 → 出报告"，顺手抓 JS 报错 / 4xx。
 
 跑法（要先在另一个窗口把 `start.bat` 起起来）：
     E:\\Python\\python.exe -X utf8 tools\\shot_web.py
-图默认写到 %TEMP%\\hg_shot_*.png。
+
+默认**不存截图**（用户 2026-09-29：不用每次截图）。真要出图加 --shots，
+写到 %TEMP%\\hg_shot_*.png。
 """
 
 import os
@@ -13,7 +15,8 @@ import tempfile
 from playwright.sync_api import sync_playwright
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:1310/"
-OUT = sys.argv[2] if len(sys.argv) > 2 else tempfile.gettempdir()
+OUT = tempfile.gettempdir()
+SHOTS = "--shots" in sys.argv
 
 
 def main():
@@ -29,9 +32,10 @@ def main():
 
         page.goto(URL, wait_until="load", timeout=20000)
         page.wait_for_timeout(600)
-        first = os.path.join(OUT, "hg_shot_upload.png")
-        page.screenshot(path=first, full_page=True)
-        print("交作业 ->", first)
+        if SHOTS:
+            first = os.path.join(OUT, "hg_shot_upload.png")
+            page.screenshot(path=first, full_page=True)
+            print("交作业 ->", first)
 
         # 第一屏自检：三步条在第 1 步、作业信息填好、提交键还是灰的
         checks = []
@@ -53,9 +57,10 @@ def main():
         page.click("#submit")
         page.wait_for_selector("#resultCard:not(.hidden)", timeout=20000)
         page.wait_for_timeout(500)
-        second = os.path.join(OUT, "hg_shot_result.png")
-        page.screenshot(path=second, full_page=True)
-        print("出结果 ->", second)
+        if SHOTS:
+            second = os.path.join(OUT, "hg_shot_result.png")
+            page.screenshot(path=second, full_page=True)
+            print("出结果 ->", second)
 
         checks.append(("结果页：步骤条走到第 3 步",
                        page.eval_on_selector('.step.is-on', 'el => el.dataset.step') == '3'))
@@ -91,9 +96,10 @@ def main():
         desk.click("#submit")
         desk.wait_for_selector("#resultCard:not(.hidden)", timeout=20000)
         desk.wait_for_timeout(500)
-        third = os.path.join(OUT, "hg_shot_desktop.png")
-        desk.screenshot(path=third, full_page=True)
-        print("报告（投屏）->", third)
+        if SHOTS:
+            third = os.path.join(OUT, "hg_shot_desktop.png")
+            desk.screenshot(path=third, full_page=True)
+            print("报告（投屏）->", third)
         desk.close()
 
         browser.close()
