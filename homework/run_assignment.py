@@ -207,7 +207,8 @@ def group_issues(issues):
                 cur["to_note"] = no
                 continue
         groups.append({"items": [it], "from_note": no, "to_note": no,
-                       "measure": it.get("measure"), "beat": it.get("beat")})
+                       "measure": it.get("measure"), "beat": it.get("beat"),
+                       "raw": it})
     for g in groups:
         g["title"] = group_title(g)
         g["detail"] = group_detail(g)
@@ -238,8 +239,11 @@ def group_title(g):
 
 def group_detail(g):
     items = g["items"]
+    # "多弹/杂音"这一类是手写好的整条问题，别拿单音那套说法去套
+    if len(items) == 1 and items[0].get("kind") == "extra":
+        return (g.get("raw") or items[0]).get("detail") or "录音里有对不上谱面的音。"
     if len(items) == 1:
-        return "这一处" + detail_one(*note_pair(items[0]), kind=items[0].get("kind")) + "。"
+        return single_detail(*note_pair(items[0]), kind=items[0].get("kind"))
     parts = [detail_one(*note_pair(i), kind=i.get("kind")) for i in items[:4]]
     tail = "等 %d 处" % len(items) if len(items) > 4 else ""
     return "这一句连着 %d 个音没对上：%s%s。" % (len(items), "、".join(parts), tail)
@@ -253,6 +257,15 @@ def detail_one(want, got, kind=None):
         # 判定没过、但引擎量到的就是谱面这个音 —— 多半是没弹实 / 被上一个音盖住
         return "%s 判定没过（可能没弹实）" % want
     return "要 %s，听着弹成了约 %s" % (want, got)
+
+
+def single_detail(want, got, kind=None):
+    """一条问题单独成句时的说法（和 detail_one 同一套口径，只是句子更顺）。"""
+    if kind == "missing":
+        return "这一处漏了 %s。" % want
+    if not got or got == want:
+        return "这一处的 %s 判定没过（可能没弹实，或者被上一个音盖住了）。" % want
+    return "这一处要 %s，听着弹成了约 %s。" % (want, got)
 
 
 def note_pair(it):
@@ -424,6 +437,48 @@ def _dp_match(index, judged, events, score, scale, offset):
     return match, extra
 
 
+def _judge_pairs(pairs, index, audio, jobdir, band, tag=""):
+    """跑一次判定桥，返回和 index 一一对应的 judged 列表。"""
+    pairs_path = os.path.join(jobdir, "pairs%s.json" % tag)
+    judged_path = os.path.join(jobdir, "judged%s.json" % tag)
+    with io.open(pairs_path, "w", encoding="utf-8") as f:
+        json.dump({"audio": audio, "band": list(band), "pairs": pairs}, f,
+                  ensure_ascii=False, indent=1)
+    print(run_node("engine_judge.mjs", pairs_path, judged_path).strip())
+    return load_json(judged_path)["judged"]
+
+
+def check_repeat(events, extras, score, scale, offset, audio, jobdir, band):
+    """多弹里到底有没有"整段又弹了一遍"—— 拿证据说话，不靠猜。
+
+    做法：把没配上的那些起音，按"下一遍"的假设再去和整份谱面对一次
+    （offset + 一遍的长度）。只有这一遍能**独立**把谱面大部分音都对上，
+    才算"重复弹了一遍"；否则只报"有 N 个音没对上谱面"，不说是多弹。
+    """
+    if len(extras) < 6:
+        return {"repeat": False, "count": len(extras)}
+    pass_len = (score[-1]["t"] - score[0]["t"]) * scale if len(score) > 1 else 0.0
+    off2 = offset + pass_len
+    ev = [events[i] for i in sorted(extras)]
+    pairs, index = [], []
+    for k, e in enumerate(ev):
+        for j, s in enumerate(score):
+            if abs(e["t"] - (s["t"] * scale + off2)) <= 0.6:
+                pairs.append({"t": e["t"], "expectedMidi": int(s["midi"]),
+                              "string": s.get("string"), "fret": s.get("fret"),
+                              "level": e.get("lv")})
+                index.append((k, j))
+    if not pairs:
+        return {"repeat": False, "count": len(extras)}
+    judged = _judge_pairs(pairs, index, audio, jobdir, band, tag="_repeat")
+    match, _ = _dp_match(index, judged, ev, score, scale, off2)
+    coverage = len(match) / float(max(1, len(score)))
+    return {"repeat": coverage >= 0.6 and len(match) >= 8,
+            "count": len(extras), "matched": len(match),
+            "score_notes": len(score), "coverage": round(coverage, 3),
+            "offset": round(off2, 3)}
+
+
 def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
     """起音（引擎）→ 配对（我们自己：模型 + 单调 DP）→ 判定（引擎的判定方式）。
 
@@ -437,13 +492,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
         raise SystemExit("这一段录音里一个起音都没检出来")
 
     pairs, index = _pair_candidates(events, score)
-    pairs_path = os.path.join(jobdir, "pairs.json")
-    judged_path = os.path.join(jobdir, "judged.json")
-    with io.open(pairs_path, "w", encoding="utf-8") as f:
-        json.dump({"audio": audio, "band": list(band), "pairs": pairs}, f,
-                  ensure_ascii=False, indent=1)
-    print(run_node("engine_judge.mjs", pairs_path, judged_path).strip())
-    judged = load_json(judged_path)["judged"]
+    judged = _judge_pairs(pairs, index, audio, jobdir, band)
 
     # ① 整体模型：以"第一声"为锚（用户口径：从第一个明显的音开始算第一个音），
     #    速度比粗扫，挑窗内判过最多的那一档
@@ -497,7 +546,9 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
                      "want": None, "got": None, "measure": None, "beat": None})
     info = {"mode": "作业批改自己的配对（引擎判定）", "offset": offset, "scale": scale,
             "onsets": len(events), "matched": len(match), "extra": len(extra),
-            "hit_window": hits, "candidates": len(pairs), "onsets_list": events}
+            "hit_window": hits, "candidates": len(pairs), "onsets_list": events,
+            "repeat": check_repeat(events, extra, score, scale, offset,
+                                   audio, jobdir, band)}
     return rows, info
 
 
@@ -536,7 +587,7 @@ def issues_from_rows(rows, score, tempo=None):
             title = "本段第 %d 个音" % (j + 1)
         else:
             title = "录音里多出来的音"
-        detail = "这一处%s。" % detail_one(want, got, kind=r["kind"])
+        detail = single_detail(want, got, kind=r["kind"])
         t_audio = r.get("t_audio")
         out.append({
             "title": title, "measure": measure, "beat": beat,
@@ -586,15 +637,16 @@ def load_json(path):
         return json.load(f)
 
 
-def score_of(issues, notes_total):
-    """Q24 的口径（第一版）：干净 96；每处问题按影响扣分；下限 60；一处问题都没有给 100。"""
-    if not issues:
-        return 100.0
-    deducts = [8.5] + [8.5 * 0.6] * (len(issues) - 1)
-    val = 96.0 - sum(deducts)
-    if len(issues) >= 3:
-        val -= 2
-    return float(max(60, int(round(val))))
+def score_of(counts, notes_total):
+    """得分口径（2026-09-29 用户同意改版）：**得分 = 弹对的音 ÷ 本次作业的音数 × 100**。
+
+    为什么换掉"干净 96、每处扣 8.5"（Q24 原口径）：那个口径是给"视频分析挑问题"用的，
+    放在逐音批改上不好解释 —— 38 个音对 34 个却只有 70 分，学员会问"这 4 个音值 30 分？"。
+    现在这条一眼能算：对 34 / 共 38 → 89 分；全对 → 100。漏和错一样算"没拿到"。
+    （多弹不进分数：Q17 说多弹要报但有限度，不该因为多弹一遍把分扣没。）
+    """
+    ok = counts.get("ok", 0)
+    return float(int(round(100.0 * ok / max(1, notes_total))))
 
 
 def build(rows, score_notes):
@@ -718,13 +770,33 @@ def main(argv=None):
         counts = {"ok": 0, "wrong_note": 0, "missing": 0, "extra": 0}
         for r in rows:
             counts[r["kind"]] = counts.get(r["kind"], 0) + 1
+        # 多弹：只有"能再独立对齐上谱面大部分音"的那一遍才算重复弹，否则只当中性提示
+        rep = pinfo.get("repeat") or {}
         issues = issues_from_rows(rows, score, standard.get("tempo"))
-        sc = score_of(issues, len(score))
+        if rep.get("repeat"):
+            pass  # 重复的那一遍不当作问题（下面写进"过程提醒"）
+        elif rep.get("count", 0) >= 3:
+            issues.append({
+                "title": "有 %d 个音没对上谱面" % rep["count"],
+                "measure": None, "beat": None, "note_index": None,
+                "t_audio": None, "t_score": None, "kind": "extra",
+                "detail": ("录音里有 %d 个音对不上谱面 —— 可能是多弹，也可能是杂音，"
+                           "这一段没算进分数。" % rep["count"]),
+                "fix": "对着谱子再走一遍，只弹谱面上的音。",
+                "items": [{"want": None, "got": None, "kind": "extra",
+                           "measure": None, "beat": None, "t_audio": None}],
+            })
+        sc = score_of(counts, len(score))
         groups = rank_groups(group_issues(issues))
         key_groups = groups[:KEY_ISSUES]
         rest_groups = groups[KEY_ISSUES:]
         process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])], score)
-        vtext = verdict_text(sc, PASS_LINE, key_groups, process, len(issues))
+        if rep.get("repeat"):
+            process.insert(0, "你把作业弹了两遍：第二遍有 %d/%d 个音也对上了。"
+                              "作业只需要一遍，多出来的第二遍没算进分数。"
+                           % (rep.get("matched", 0), rep.get("score_notes", len(score))))
+        n_problems = sum(1 for it in issues if it.get("kind") != "extra")
+        vtext = verdict_text(sc, PASS_LINE, key_groups, process, n_problems)
         print("")
         print("=" * 70)
         print("逐音：对 %d ｜ 错 %d ｜ 漏 %d ｜ 多弹 %d ｜ 得分 %.0f"
@@ -786,7 +858,8 @@ def main(argv=None):
             "standard": standard,
             "note": "数字来自「作业批改自己的链路」：起音和判定都是 GuitarFollow engine 的代码"
                     "（判定窗口/opts 照产品页那一处调用），配对（对齐）由作业检查自己做"
-                    "——所以漏一个音只会报一处漏，不会一路错位。",
+                    "——所以漏一个音只会报一处漏，不会一路错位。"
+                    "得分 = 弹对的音 ÷ 本次作业的音数（%d/%d）。" % (counts["ok"], len(score)),
         }
         with io.open(os.path.join(jobdir, "page.json"), "w", encoding="utf-8") as f:
             json.dump(page, f, ensure_ascii=False, indent=1)
@@ -808,7 +881,8 @@ def main(argv=None):
         if log and len(issues) != bad:
             print("⚠ 逐音记录里挑出 %d 处错音，页面计数 %d —— 报告以逐音记录为准"
                   % (len(issues), bad))
-        sc = score_of(issues, len(score))
+        counts = {"ok": good, "wrong_note": bad, "missing": missed, "extra": 0}
+        sc = score_of(counts, len(score))
         judged = judged_slots(log) or (good + bad)
         # 报告层：聚成"一句"、排影响、只展开前几条；再给总评和过程提醒
         groups = rank_groups(group_issues(issues))
@@ -954,7 +1028,7 @@ def main(argv=None):
     for r in rows:
         counts[r["kind"]] = counts.get(r["kind"], 0) + 1
     issues = build(rows, score)
-    sc = score_of(issues, len(score))
+    sc = score_of(counts, len(score))
 
     out = {
         "job": args.job,
