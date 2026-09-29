@@ -27,6 +27,7 @@ import argparse
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -35,13 +36,58 @@ FOLLOW_REPO = os.environ.get("GUITARFOLLOW_REPO", r"E:\GuitarFollowLab")
 # gp_timeline.py 要 PyGuitarPro，装在跟 VirtuCoach 共用的那个运行库目录里
 FOLLOW_LIB = os.environ.get("GUITARFOLLOW_PYTHONPATH", r"E:\VirtuCoach-Lib")
 
+# Q6「以吉他为准」：轨名里带这些词的就当吉他
+GUITAR_HINTS = ("guitar", "gtr", "吉他", "吉它", "acoustic", "electric")
+# 反过来：轨名叫这些的，选它当标准要提醒一句
+NOT_GUITAR_HINTS = ("vocal", "voice", "sing", "choir", "piano", "keys",
+                    "bass", "drum", "percussion", "弦乐", "人声", "鼓")
 
-def build_timeline(gp_path, track=None):
-    """跑跟弹的 gp_timeline.py，拿回整首时间轴。返回 (meta, notes, 它的原话)。
+# gp_timeline.py 打的轨道行：  [2] Guitar                 6 弦  调弦 E4 B3 G3 D3 A2 E2          音符  285
+TRACK_RE = re.compile(r"^\s*\[(\d+)\]\s+(.*?)\s+(\d+)\s*弦\s+调弦\s+(.*?)\s+音符\s+(\d+)(.*)$")
 
-    为什么必须借它的：.gp → 时间轴 只允许有一个生产者（三个项目的关系 §2/§4）。
-    作业检查自己再写一份解析器，两边迟早会不一样，判定口径就分叉了。
+
+def list_tracks(log):
+    """从 gp_timeline.py 的输出里把轨道清单读出来（它就打这一行一行，不用另写解析器）。"""
+    out = []
+    for line in (log or "").splitlines():
+        m = TRACK_RE.match(line)
+        if not m:
+            continue
+        name = m.group(2).strip()
+        out.append({
+            "index": int(m.group(1)),
+            "name": name,
+            "strings": int(m.group(3)),
+            "tuning": m.group(4).split(),
+            "notes": int(m.group(5)),
+            "percussion": "打击轨" in (m.group(6) or ""),
+        })
+    return out
+
+
+def pick_track(tracks):
+    """Q6「以吉他为准」——返回 (选中的轨道, 为什么选它)。
+
+    先按轨名认吉他；认不出来就退回第 0 条非打击轨（跟弹那边 gp_timeline.py 的默认），
+    并且**把理由打出来**，让人一眼能看见"标准答案取的是哪条线"。
+
+    为什么不用"音最多的那条"当兜底：Hey Jude 那份 .gp3 里 0 轨叫 Voice（就是学员要弹的
+    旋律，118 个音）、1 轨叫 Piano（伴奏，622 个音）——按"音最多"会挑到钢琴轨，直接错。
     """
+    named = [t for t in tracks
+             if not t["percussion"]
+             and any(h in t["name"].lower() for h in GUITAR_HINTS)]
+    if named:
+        best = max(named, key=lambda t: t["notes"])
+        return best, "轨名里有“吉他/ Guitar ”"
+    rest = [t for t in tracks if not t["percussion"]]
+    if rest:
+        return rest[0], "轨名里没有吉他，退回第 0 条非打击轨（不是这条就 --track N）"
+    return None, "没有非打击轨"
+
+
+def _run_timeline(gp_path, track):
+    """跑一次 gp_timeline.py，返回 (meta, notes, 它的原话)。"""
     script = os.path.join(FOLLOW_REPO, "backend", "tools", "gp_timeline.py")
     if not os.path.exists(script):
         raise SystemExit("找不到跟弹的时间轴脚本：%s\n（GUITARFOLLOW_REPO 指错了？）" % script)
@@ -59,6 +105,33 @@ def build_timeline(gp_path, track=None):
     with io.open(out, encoding="utf-8") as f:
         d = json.load(f)
     return d.get("meta", {}), d.get("notes", []), p.stdout
+
+
+def build_timeline(gp_path, track=None):
+    """跑跟弹的 gp_timeline.py，拿回整首时间轴。返回 (meta, notes, 它的原话)。
+
+    为什么必须借它的：.gp → 时间轴 只允许有一个生产者（三个项目的关系 §2/§4）。
+    作业检查自己再写一份解析器，两边迟早会不一样，判定口径就分叉了。
+
+    `--track` 不给的时候按 Q6 选吉他轨（见 pick_track），并把"选了哪条、为什么"写进
+    meta（`_track_why` / `_tracks`），报告和参考 json 里都能查到。
+    """
+    meta, notes, log = _run_timeline(gp_path, track)      # 先跑一次，既拿清单也拿默认那轨
+    tracks = list_tracks(log)
+    used = (meta.get("track") or {}).get("index")
+    why = ""
+    if track is None:
+        want, why = pick_track(tracks)
+        if want is not None and want["index"] != used:
+            meta, notes, log2 = _run_timeline(gp_path, want["index"])
+            log = log + "\n" + log2
+            used = want["index"]
+    else:
+        why = "命令行指定 --track %d" % track
+    meta["_track_why"] = why
+    meta["_tracks"] = tracks
+    meta["_track_index"] = used
+    return meta, notes, log
 
 
 def crop_notes(notes, spec_slice="", spec_bars=""):
@@ -125,11 +198,29 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     meta, notes, log = build_timeline(args.gp, args.track)
+    tracks = meta.get("_tracks") or []
+    used = meta.get("_track_index")
+    seen_head = set()
     for line in log.splitlines():
-        if "轨道" in line or line.strip().startswith("[") or "拍号" in line or "变速" in line:
-            print(line)
+        if "拍号" in line or "变速" in line:
+            if line not in seen_head:      # 选轨时跑了两次，表头去重
+                seen_head.add(line)
+                print(line)
     if not notes:
         raise SystemExit("这条轨上没解析出音")
+
+    print("--- 轨道（Q6：以吉他为准）---")
+    for t in tracks:
+        print("  [%d] %-22s %s 弦  调弦 %-26s 音符 %4d%s%s"
+              % (t["index"], t["name"], t["strings"], " ".join(t["tuning"]), t["notes"],
+                 "（打击轨）" if t["percussion"] else "",
+                 "  ← 用这条当标准答案" if t["index"] == used else ""))
+    if meta.get("_track_why"):
+        print("  选轨理由：%s" % meta["_track_why"])
+    used_name = next((t["name"] for t in tracks if t["index"] == used), "")
+    if any(h in (used_name or "").lower() for h in NOT_GUITAR_HINTS):
+        print("  ⚠ 这条轨叫「%s」，看名字不像吉他 —— 确认一下是不是要 --track N 换一条（Q6）"
+              % used_name)
 
     keep, desc = crop_notes(notes, args.slice, args.bars)
     tr = (meta.get("track") or {})
