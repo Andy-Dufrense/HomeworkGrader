@@ -26,8 +26,10 @@ const el = {
   noAudio: $('noAudio'), reportBody: $('reportBody'),
   score: $('score'), verdict: $('verdict'),
   coverage: $('coverage'), accuracy: $('accuracy'), counts: $('counts'),
-  summary: $('summary'), chart: $('chart'), issues: $('issues'),
-  issueCount: $('issueCount'), again: $('again'), demoNote: $('demoNote'),
+  summary: $('summary'), process: $('process'), chart: $('chart'), issues: $('issues'),
+  issueFold: $('issueFold'), foldSummary: $('foldSummary'),
+  moreWrap: $('moreWrap'), moreCount: $('moreCount'), moreIssues: $('moreIssues'),
+  again: $('again'), demoNote: $('demoNote'),
 };
 
 const STEP_ATTR = ['is-on', 'is-done'];
@@ -295,19 +297,44 @@ function render(r) {
     '<span class="' + cls + '">' + k + '<b>' + (v == null ? '—' : v) + '</b></span>'
   ).join('');
 
-  el.summary.textContent = r.summary;
-  el.issueCount.textContent = r.issues.length;
-  el.issues.innerHTML = r.issues.length
-    ? r.issues.map(it => `
+  // 总评（先说结论）
+  el.summary.textContent = r.verdict_text || r.summary || '';
+
+  // 过程提醒（节奏/停顿/快慢）：不占问题清单
+  const proc = r.process || [];
+  el.process.innerHTML = proc.map(t => '<li>' + esc(t) + '</li>').join('');
+  show(el.process, proc.length > 0);
+
+  // 问题清单：先展开"先改这几处"，其余折起来；整份过了就默认收起
+  const key = r.key_issues || r.issues || [];
+  const more = r.more_issues || [];
+  const card = (it) => `
       <div class="issue">
         <div class="ih"><span>${esc(it.title)}</span><span class="t">${esc(issueTime(it))}</span></div>
         <div class="d">${esc(it.detail)}</div>
         <div class="f"><b>怎么改：</b>${esc(it.fix)}</div>
-      </div>`).join('')
-    : '<p class="stage">这一段没有挑出明显问题。</p>';
+      </div>`;
+  el.issues.innerHTML = key.length
+    ? key.map(card).join('')
+    : '<p class="stage">这一段没挑出明显问题。</p>';
+  el.foldSummary.textContent = r.passed
+    ? '这次的小问题（' + key.length + ' 处，不拦你过）'
+    : '先改这几处（' + key.length + ' 处）';
+  el.issueFold.open = !r.passed;
+  el.moreCount.textContent = more.length;
+  renderMoreIssues(more);
   el.demoNote.textContent = r.note;
   drawChart(r);
   el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 折叠区里那几条零星问题（只列位置，不展开改法 —— 免得报告太长）
+function renderMoreIssues(more) {
+  show(el.moreWrap, more.length > 0);
+  el.moreIssues.innerHTML = (more || []).map(it =>
+    '<div class="issue"><div class="ih"><span>' + esc(it.title) + '</span>'
+    + '<span class="t">' + esc(it.t_audio == null ? '' : ('录音 ' + it.t_audio + ' 秒'))
+    + '</span></div></div>').join('');
 }
 
 // 一处问题的时间：录音第几秒（判定听到的那一下）+ 谱面第几秒（对得上的那个音）

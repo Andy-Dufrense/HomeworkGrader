@@ -239,6 +239,35 @@ h1{font-size:25px;line-height:1.3;margin:0 0 4px;letter-spacing:-.01em}
 .counts .c-bad b{color:var(--bad)}
 .summary{font-size:14.5px;color:var(--ink-2);margin:14px 0 0}
 
+/* 过程提醒（节奏/停顿/快慢）—— 不占问题清单，只提醒 */
+.process{
+  list-style:none;margin:12px 0 0;padding:12px 14px;border-radius:10px;
+  background:#fbfcfe;border:1px solid var(--line-2);
+  font-size:13.5px;color:var(--ink-2);
+}
+.process li{margin:4px 0;padding-left:16px;position:relative;line-height:1.65}
+.process li::before{
+  content:"";position:absolute;left:3px;top:8px;width:5px;height:5px;border-radius:50%;
+  background:var(--brand);
+}
+
+/* 问题清单：默认展开"先改这几处"，通过了就折叠起来 */
+.issue-fold>summary{
+  cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);
+  padding:14px 0 0;margin-top:20px;border-top:1px solid var(--line-2);list-style:none;
+}
+.issue-fold>summary::-webkit-details-marker{display:none}
+.issue-fold>summary::before{content:"▸ ";color:var(--dim)}
+.issue-fold[open]>summary::before{content:"▾ "}
+#issues{margin-top:10px}
+.more{margin-top:10px}
+.more>summary{
+  cursor:pointer;font-size:13px;color:var(--dim);padding:8px 12px;
+  border:1px dashed var(--line);border-radius:8px;background:#fbfcfe;
+}
+.more #moreIssues{margin-top:8px}
+.more .issue{padding:10px 12px}
+
 .chart-wrap{margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fbfcfe}
 #chart{display:block;width:100%;height:170px}
 .legend{display:flex;flex-wrap:wrap;gap:16px;font-size:12.5px;color:var(--dim);margin-top:10px}

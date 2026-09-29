@@ -136,6 +136,7 @@
 
     <div class="counts" id="counts"></div>
     <p class="summary" id="summary">—</p>
+    <ul class="process" id="process"></ul>
 
     <h3 class="sub-title">与标准谱面的对照</h3>
     <div class="chart-wrap"><svg id="chart" viewBox="0 0 720 170" preserveAspectRatio="none" role="img" aria-label="谱面与错误的对照图"></svg></div>
@@ -145,8 +146,14 @@
       <span><i class="sw line"></i>小节线</span>
     </div>
 
-    <h3 class="sub-title">需要改进的地方（<span id="issueCount">0</span> 处）</h3>
-    <div id="issues"></div>
+    <details class="issue-fold" id="issueFold" open>
+      <summary id="foldSummary">先改这几处</summary>
+      <div id="issues"></div>
+      <details class="more" id="moreWrap" hidden>
+        <summary>还有 <span id="moreCount">0</span> 处零星问题（不拦你过）</summary>
+        <div id="moreIssues"></div>
+      </details>
+    </details>
 
     <p class="basis">
       判定依据：把录音与老师上传的谱面逐音对齐后比对，对错按音名判定；
