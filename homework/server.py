@@ -388,6 +388,8 @@ def grade_submission(task_id, aid, saved_path, name):
     f32 = os.path.join(outdir, stamp + ".f32")
     try:
         upd(stage="已收到录音，正在解码（48k 单声道）…", stage_index=0, progress=8)
+        # 原样解码，不补静音：作业批改走**我们自己的配对**（从第一个明显的音算第一个音），
+        # 不借跟弹产品页那条链路，也就不存在"四拍倒数吃开头"这回事。
         p = _run([PY, "-X", "utf8", os.path.join(HERE, "audio.py"), saved_path, f32], 600)
         if p.returncode != 0:
             return upd(status="failed", stage="音频解码失败：%s" % (p.stdout or p.stderr)[-200:])
@@ -395,7 +397,7 @@ def grade_submission(task_id, aid, saved_path, name):
 
         upd(stage="正在跑判定链路（起音 → 对齐 → 逐音判定）…", stage_index=1, progress=22)
         cmd = [PY, "-X", "utf8", os.path.join(HERE, "run_assignment.py"),
-               "--assignment", aid, "--audio", f32, "--job", job_id, "--engine", "follow"]
+               "--assignment", aid, "--audio", f32, "--job", job_id]
         # 判定要按录音时长跑（30 秒的录音约 9 秒）；一边跑一边把"哪一步"报出来
         proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True,

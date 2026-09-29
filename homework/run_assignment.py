@@ -42,6 +42,10 @@ JOBS = os.path.join(ROOT, "data", "jobs")
 
 # 报告层：只展开前几条"最值得先改"的问题（Q17「有限度」在报告里的体现）
 KEY_ISSUES = 3
+# 作业批改自己的配对（对齐）参数 —— 见 pair_pipeline()
+PAIR_RANK_WIN = 12          # 候选：按"第几个音"的窗口（容忍整体位移）
+PAIR_TIME_WIN = 2.0         # 候选：按时间就近（秒）
+PAIR_MATCH_WIN = 0.5        # 单调 DP 里允许的时间残差（秒）
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
 PASS_LINE = int(os.environ.get("HOMEWORK_PASS_LINE", "90"))
 # 过程提醒的"明显"门槛（Q9 / Q18 的建议值，用户说改就改）
@@ -235,12 +239,20 @@ def group_title(g):
 def group_detail(g):
     items = g["items"]
     if len(items) == 1:
-        it = items[0]
-        want, got = note_pair(it)
-        return "这一处要 %s，听着弹成了约 %s。" % (want, got)
-    parts = ["%s→%s" % note_pair(i) for i in items[:4]]
+        return "这一处" + detail_one(*note_pair(items[0]), kind=items[0].get("kind")) + "。"
+    parts = [detail_one(*note_pair(i), kind=i.get("kind")) for i in items[:4]]
     tail = "等 %d 处" % len(items) if len(items) > 4 else ""
     return "这一句连着 %d 个音没对上：%s%s。" % (len(items), "、".join(parts), tail)
+
+
+def detail_one(want, got, kind=None):
+    """一处问题的说法：漏弹 / 判定没过（读数就是谱面这个音）/ 弹成了别的音。"""
+    if kind == "missing":
+        return "漏了 %s" % want
+    if not got or got == want:
+        # 判定没过、但引擎量到的就是谱面这个音 —— 多半是没弹实 / 被上一个音盖住
+        return "%s 判定没过（可能没弹实）" % want
+    return "要 %s，听着弹成了约 %s" % (want, got)
 
 
 def note_pair(it):
@@ -350,6 +362,198 @@ def verdict_text(score, pass_line, key_groups, process, total_issues):
     return head
 
 
+# ── 作业批改自己的那条链路：起音 → 配对（我们的对齐）→ 判定（引擎的判定方式）──
+#
+# 为什么不再借跟弹产品页那条链路（2026-09-29 用户点破）：
+#   产品页是**练习**用的 —— 开始要数四拍、判错就停下重弹、按"第几次起音对第几个音"
+#   顺序走。学员只要漏一个音，后面就整体错位，报告变成"前几个音全错"。
+#   作业批改要的是"对着谱子检查成果"：从那一声明显的音开始，允许漏、允许整体快慢，
+#   配对错了不许一路怪学员。
+#   所以这里自己走三步，判定仍然只用 engine/judger.js 的 judgeNote，
+#   而且窗口/opts 严格照产品页那一处调用（见 engine_judge.mjs 的注释）。
+
+def _pair_candidates(events, score):
+    """候选配对：按"第几个音"的窗口 ∪ 按时间就近的窗口。"""
+    pairs, index = [], []
+    n, m = len(events), len(score)
+    for i, e in enumerate(events):
+        base = int(round(i * m / float(max(1, n))))
+        cand = set(range(max(0, base - PAIR_RANK_WIN), min(m, base + PAIR_RANK_WIN + 1)))
+        cand |= {j for j, s in enumerate(score) if abs(e["t"] - s["t"]) <= PAIR_TIME_WIN}
+        for j in sorted(cand):
+            pairs.append({"t": e["t"], "expectedMidi": int(score[j]["midi"]),
+                          "string": score[j].get("string"), "fret": score[j].get("fret"),
+                          "level": e.get("lv")})
+            index.append((i, j))
+    return pairs, index
+
+
+def _dp_match(index, judged, events, score, scale, offset):
+    """单调 DP：两条序列都允许跳过（跳起音 = 多弹，跳谱面音 = 漏弹）。"""
+    W = {}
+    for (i, j), jd in zip(index, judged):
+        dt = abs(events[i]["t"] - (score[j]["t"] * scale + offset))
+        if dt > PAIR_MATCH_WIN:
+            continue
+        W[(i, j)] = (2.0 if jd["pass"] else -0.30) - dt * 0.5
+    n, m = len(events), len(score)
+    SKIP_E, SKIP_S = -0.25, -0.6
+    dp = [[0.0] * (m + 1) for _ in range(n + 1)]
+    back = [[None] * (m + 1) for _ in range(n + 1)]
+    for i in range(n, -1, -1):
+        for j in range(m, -1, -1):
+            if i == n and j == m:
+                continue
+            best, arg = -1e9, None
+            if i < n and SKIP_E + dp[i + 1][j] > best:
+                best, arg = SKIP_E + dp[i + 1][j], ("skip_e", i + 1, j)
+            if j < m and SKIP_S + dp[i][j + 1] > best:
+                best, arg = SKIP_S + dp[i][j + 1], ("skip_s", i, j + 1)
+            if i < n and j < m and (i, j) in W and W[(i, j)] + dp[i + 1][j + 1] > best:
+                best, arg = W[(i, j)] + dp[i + 1][j + 1], ("pair", i + 1, j + 1)
+            dp[i][j], back[i][j] = best, arg
+    match, extra = {}, set()
+    i = j = 0
+    while not (i == n and j == m):
+        kind, ni, nj = back[i][j]
+        if kind == "pair":
+            match[j] = i
+        elif kind == "skip_e":
+            extra.add(i)
+        i, j = ni, nj
+    return match, extra
+
+
+def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
+    """起音（引擎）→ 配对（我们自己：模型 + 单调 DP）→ 判定（引擎的判定方式）。
+
+    返回 (rows, info)：rows 和 bridge 那条路同一个形状，好直接喂报告层；
+    info 里有估出来的整体位移/速度比/置信度，报告和排查都用得上。
+    """
+    events_path = os.path.join(jobdir, "events.json")
+    print(run_node("engine_bridge.mjs", audio, events_path, band[0], band[1]).strip())
+    events = load_json(events_path)["events"]
+    if not events:
+        raise SystemExit("这一段录音里一个起音都没检出来")
+
+    pairs, index = _pair_candidates(events, score)
+    pairs_path = os.path.join(jobdir, "pairs.json")
+    judged_path = os.path.join(jobdir, "judged.json")
+    with io.open(pairs_path, "w", encoding="utf-8") as f:
+        json.dump({"audio": audio, "band": list(band), "pairs": pairs}, f,
+                  ensure_ascii=False, indent=1)
+    print(run_node("engine_judge.mjs", pairs_path, judged_path).strip())
+    judged = load_json(judged_path)["judged"]
+
+    # ① 整体模型：以"第一声"为锚（用户口径：从第一个明显的音开始算第一个音），
+    #    速度比粗扫，挑窗内判过最多的那一档
+    passed = {(i, j) for (i, j), jd in zip(index, judged) if jd["pass"]}
+    t0_e, t0_s = events[0]["t"], score[0]["t"]
+    best = (-1, 1.0, t0_e - t0_s)
+    sc = 0.80
+    while sc <= 1.6001:
+        off = t0_e - t0_s * sc
+        n = sum(1 for (i, j) in passed
+                if abs(events[i]["t"] - (score[j]["t"] * sc + off)) <= 0.35)
+        if n > best[0]:
+            best = (n, sc, off)
+        sc += 0.02
+    hits, scale, offset = best
+
+    # ② DP → 用配对结果重拟合"位移+速度比" → 再 DP（两轮就收敛）
+    match, extra = _dp_match(index, judged, events, score, scale, offset)
+    for _ in range(2):
+        pts = [(score[j]["t"], events[i]["t"]) for j, i in match.items()]
+        if len(pts) >= 6:
+            a = [[t_s, 1.0] for t_s, _ in pts]
+            y = [t_e for _, t_e in pts]
+            scale, offset = _fit_affine(a, y)
+            resid = [abs(y[k] - (a[k][0] * scale + offset)) for k in range(len(y))]
+            med = sorted(resid)[len(resid) // 2]
+            keep = [k for k in range(len(y)) if resid[k] <= max(0.30, med * 2.5)]
+            if len(keep) >= 6:
+                scale, offset = _fit_affine([a[k] for k in keep], [y[k] for k in keep])
+        match, extra = _dp_match(index, judged, events, score, scale, offset)
+
+    jd_of = {}
+    for (i, j), jd in zip(index, judged):
+        jd_of[(i, j)] = jd
+    beats = beat_index_map(score, None)
+    rows = []
+    for j, sn in enumerate(score):
+        base = {"score_idx": j, "t_score": sn["t"], "want": note_name(sn["midi"]),
+                "string": sn.get("string"), "fret": sn.get("fret"),
+                "measure": sn.get("measure"), "beat": sn.get("beat")}
+        if j not in match:
+            rows.append(dict(base, kind="missing", t_audio=None, got=None))
+            continue
+        i = match[j]
+        jd = jd_of[(i, j)]
+        base["t_audio"] = events[i]["t"]
+        rows.append(dict(base, kind="ok" if jd["pass"] else "wrong_note",
+                         got=jd.get("heardName")))
+    for i in sorted(extra):
+        rows.append({"score_idx": None, "kind": "extra", "t_audio": events[i]["t"],
+                     "want": None, "got": None, "measure": None, "beat": None})
+    info = {"mode": "作业批改自己的配对（引擎判定）", "offset": offset, "scale": scale,
+            "onsets": len(events), "matched": len(match), "extra": len(extra),
+            "hit_window": hits, "candidates": len(pairs), "onsets_list": events}
+    return rows, info
+
+
+def _fit_affine(a, y):
+    """最小二乘拟合 t_起音 = scale × t_谱面 + offset（不引第三方库）。"""
+    n = len(a)
+    sx = sum(r[0] for r in a)
+    sy = sum(y)
+    sxx = sum(r[0] * r[0] for r in a)
+    sxy = sum(r[0] * y[k] for k, r in enumerate(a))
+    den = n * sxx - sx * sx
+    if abs(den) < 1e-9:
+        return 1.0, (sy / n) - (sx / n)
+    scale = (n * sxy - sx * sy) / den
+    return scale, (sy - scale * sx) / n
+
+
+def issues_from_rows(rows, score, tempo=None):
+    """把逐音结果（rows）里"错 / 漏"的整理成问题卡（和 issues_from_log 同一个形状）。"""
+    beats = beat_index_map(score, tempo) if tempo else {}
+    out = []
+    for r in rows:
+        if r["kind"] not in ("wrong_note", "missing"):
+            continue
+        j = r.get("score_idx")
+        sn = score[j] if j is not None else None
+        want = r.get("want") or (note_name(sn["midi"]) if sn is not None else None)
+        got = r.get("got")
+        measure = beat = None
+        if sn is not None and sn.get("measure") is not None:
+            measure = int(sn["measure"]) + 1
+            beat = beats.get(j) or (int(sn.get("beat") or 0) + 1)
+        if measure is not None:
+            title = "第 %d 小节 · 第 %d 拍" % (measure, beat or 1)
+        elif j is not None:
+            title = "本段第 %d 个音" % (j + 1)
+        else:
+            title = "录音里多出来的音"
+        detail = "这一处%s。" % detail_one(want, got, kind=r["kind"])
+        t_audio = r.get("t_audio")
+        out.append({
+            "title": title, "measure": measure, "beat": beat,
+            "note_index": (j + 1) if j is not None else None,
+            "t_audio": round(float(t_audio), 2) if t_audio is not None else None,
+            "t_score": round(float(sn["t"]), 2) if sn is not None else None,
+            "kind": r["kind"],
+            "detail": detail,
+            "fix": ("先单独把这一处补上，确认按实了再往下连。" if r["kind"] == "missing"
+                    else "把这一处单独拎出来，慢到一半速度，每个音都按实了再连起来。"),
+            "items": [{"want": want, "got": got, "kind": r["kind"],
+                       "measure": measure, "beat": beat,
+                       "t_audio": round(float(t_audio), 2) if t_audio is not None else None}],
+        })
+    return out
+
+
 def issues_from_wrongs(wrongs, score):
     """把跟弹错音清单（"第1小节 弹成约G3（要A3）"）翻成问题卡。"""
     note_at = {}
@@ -435,9 +639,10 @@ def main(argv=None):
     ap.add_argument("--job", default="",
                     help="中间产物目录名；默认用作业 id（--assignment 给了的话），否则 job")
     ap.add_argument("--band", default="75,450", help="读数频带 Hz，如 75,450")
-    ap.add_argument("--engine", choices=["follow", "bridge"], default="follow",
-                    help="follow=跑跟弹产品页自己的链路（推荐，唯一一份判定代码）；"
-                         "bridge=用本仓库自己接的引擎桥（实验用，数字还不可信）")
+    ap.add_argument("--engine", choices=["pair", "follow", "bridge"], default="pair",
+                    help="pair=作业批改自己的链路（默认）：我们的起音+配对 + 引擎的判定；"
+                         "follow=跑跟弹产品页自己的链路（练习语义：四拍倒数、判错停下重弹）；"
+                         "bridge=旧的自接引擎桥（实验用）")
     ap.add_argument("--ref-slice", default="",
                     help="把参考裁到这次作业那一段：\"A:B\"（1 起、含两端，可只写一侧）")
     ap.add_argument("--ref-bars", default="",
@@ -507,6 +712,87 @@ def main(argv=None):
         print("作业那一段：%s → %d 个音（%s）" % (crop_desc, len(score), where))
 
     # ── 路线 A：跑跟弹产品页自己的链路（推荐） ────────────────────────────
+    # ── 路线 0（默认）：作业批改自己的链路 —— 我们的起音+配对，引擎的判定 ──
+    if args.engine == "pair":
+        rows, pinfo = pair_pipeline(args.audio, score, jobdir, (lo, hi))
+        counts = {"ok": 0, "wrong_note": 0, "missing": 0, "extra": 0}
+        for r in rows:
+            counts[r["kind"]] = counts.get(r["kind"], 0) + 1
+        issues = issues_from_rows(rows, score, standard.get("tempo"))
+        sc = score_of(issues, len(score))
+        groups = rank_groups(group_issues(issues))
+        key_groups = groups[:KEY_ISSUES]
+        rest_groups = groups[KEY_ISSUES:]
+        process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])], score)
+        vtext = verdict_text(sc, PASS_LINE, key_groups, process, len(issues))
+        print("")
+        print("=" * 70)
+        print("逐音：对 %d ｜ 错 %d ｜ 漏 %d ｜ 多弹 %d ｜ 得分 %.0f"
+              % (counts["ok"], counts["wrong_note"], counts["missing"],
+                 counts["extra"], sc))
+        print("总评：%s" % vtext)
+        for i, g in enumerate(groups):
+            print("  [%s] %s ｜ %s" % ("重点" if i < KEY_ISSUES else "其余",
+                                       g["title"], g["detail"]))
+        for line in process:
+            print("  过程：%s" % line)
+        standard = dict(standard)
+        standard["align_offset"] = round(pinfo["offset"], 3)
+        standard["align_scale"] = round(pinfo["scale"], 4)
+        result = {
+            "job": job, "ref": ref_src, "audio": args.audio,
+            "ref_used": ref_path, "ref_crop": crop_desc, "ref_notes": len(score),
+            "standard": standard,
+            "engine": "作业批改自己的链路（我们的配对 + GuitarFollow 的 judgeNote）",
+            "align": {"mode": pinfo["mode"], "low_confidence": False,
+                      "offset": round(pinfo["offset"], 3),
+                      "scale": round(pinfo["scale"], 4),
+                      "matched": pinfo["matched"], "onsets": pinfo["onsets"]},
+            "counts": counts, "judged_slots": pinfo["matched"],
+            "verdict_text": vtext, "groups": groups, "key_issues": key_groups,
+            "process": process, "score": sc, "issues": groups,
+        }
+        with io.open(os.path.join(jobdir, "result.json"), "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=1)
+        page = {
+            "score": sc, "pass_line": PASS_LINE, "passed": sc >= PASS_LINE,
+            "coverage": int(round(100.0 * pinfo["matched"] / max(1, len(score)))),
+            "accuracy": int(round(100.0 * counts["ok"]
+                                  / max(1, counts["ok"] + counts["wrong_note"]))),
+            "counts": {"right": counts["ok"], "wrong": counts["wrong_note"],
+                       "missing": counts["missing"], "extra": counts["extra"]},
+            "summary": vtext, "verdict_text": vtext,
+            "issues": [{"title": g["title"], "t_audio": g["t_audio"],
+                        "t_score": g.get("t_score"), "detail": g["detail"],
+                        "fix": g["fix"]} for g in groups],
+            "key_issues": [{"title": g["title"], "t_audio": g["t_audio"],
+                            "t_score": g.get("t_score"), "note_index": g.get("from_note"),
+                            "measure": g.get("measure"), "beat": g.get("beat"),
+                            "detail": g["detail"], "fix": g["fix"],
+                            "note_count": len(g["items"])} for g in key_groups],
+            "more_issues": [{"title": g["title"], "t_audio": g["t_audio"],
+                             "t_score": g.get("t_score"),
+                             "note_count": len(g["items"])} for g in rest_groups],
+            "error_notes": [{"t_score": it.get("t_score"), "t_audio": it.get("t_audio"),
+                             "note_index": it.get("note_index"),
+                             "measure": it.get("measure"), "beat": it.get("beat"),
+                             "want": note_pair(it)[0], "got": note_pair(it)[1]}
+                            for it in issues],
+            "process": process,
+            "score_notes": [{"t": round(n["t"], 3), "string": n.get("string"),
+                             "midi": int(n["midi"])} for n in score],
+            "error_marks": [],
+            "ref_crop": crop_desc, "ref_notes": len(score),
+            "standard": standard,
+            "note": "数字来自「作业批改自己的链路」：起音和判定都是 GuitarFollow engine 的代码"
+                    "（判定窗口/opts 照产品页那一处调用），配对（对齐）由作业检查自己做"
+                    "——所以漏一个音只会报一处漏，不会一路错位。",
+        }
+        with io.open(os.path.join(jobdir, "page.json"), "w", encoding="utf-8") as f:
+            json.dump(page, f, ensure_ascii=False, indent=1)
+        print("结果已写到 %s" % os.path.join(jobdir, "result.json"))
+        return 0
+
     if args.engine == "follow":
         res, out = run_follow_harness(ref_path, args.audio)
         good, bad = int(res.get("good") or 0), int(res.get("bad") or 0)

@@ -1,32 +1,33 @@
-// 作业检查 · 判定桥：给一批「已经对齐好的 (时刻, 期望音)」逐个跑跟弹的判定。
+// 作业检查 · 判定桥：给一批「配对好的 (起音时刻, 谱面音)」逐个跑跟弹的判定。
 //
-// 为什么不"每一响读一个音名"：
-//   在"和弦一直在响 + 分解和弦"的材料上，绝对读数不可用（本机实测：
-//   60 个起音里 54 个读不出成串的基频；跟弹那边也量到"琶音 0/52"）。
-//   跟弹产品页真正用的判据是反过来问：**我要的那个音，在不在这一下的差分谱里**
-//   （matchNoteByCandidates → decideByCandidates）。这里就照抄这条产品逻辑，
-//   代码仍然只有跟弹那一份（judger.js / analysis.js / dsp.js），本文件只做编排。
+// 学的是**跟弹产品页的判定做法**（2026-09-29 对齐过代码，一行不改地照它来）：
+//   · 用哪扇窗：**判定这一刻往回 170ms**（判定在起音后 90ms，所以窗 = [起音−80ms, 起音+90ms]）
+//     8192 点 @48k = 170.67ms。产品页原话："spec 就是判定这一刻往回 170ms 那扇窗，
+//     也就是 test/gt-notes.mjs 里验过的那扇"（judge-loop.js 判那段）。
+//     ⚠ 以前这里用的是"以起音为中心、前后各 10~40ms 相减"的实验窗 —— 那是产品页里
+//     默认**关着**的开关（__judgeAttackDiff），数字和产品对不上，2026-09-29 已改正。
+//   · 传给 judgeNote 的 opts 也照抄：谱面给了弦品就把候选收到 ±2 品；按电平决定
+//     "本音要领先多少"（≥0.10 要 1.05，轻音 0.90）；频带按该弦空弦音算。
+//   · 判定算法本身是 engine/judger.js 的 judgeNote —— 不重写、不调参。
 //
 // 输入 JSON：
-//   { "audio": "...f32", "band": [loHz, hiHz],
-//     "pairs": [ { "t": 1.23, "expectedMidi": 48 }, ... ] }
-// 输出 JSON：
-//   { ..., "judged": [ { t, expectedMidi, pass, heard, heardName, fit, margin, octaveBelow } ] }
-//
-// 用法：
-//   node homework/engine_judge.mjs <pairs.json> <out.json>
+//   { "audio": "...f32", "pairs": [ { "t": 1.23, "expectedMidi": 48,
+//                                    "string": 2, "fret": 1, "level": 0.17 }, ... ] }
+// 输出 JSON：{ ..., "judged": [ { t, expectedMidi, expectedName, pass, heard, heardName, ... } ] }
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 const M = 'file:///E:/GuitarFollowLab/backend/engine/';
-const { diffMags } = await import(M + 'analysis.js');
-const { spectrumOf, hzToMidi, midiToName } = await import(M + 'dsp.js');
 const { judgeNote } = await import(M + 'judger.js');
+const { spectrumOf, midiToName } = await import(M + 'dsp.js');
 
 const SR = 48000;
-const PRE_FROM_MS = -40, PRE_LEN_MS = 30;    // 以起音为中心（同 engine_bridge.mjs）
-const POST_FROM_MS = 10, POST_LEN_MS = 30;
+const JUDGE_AT_MS = 90;          // 起音后 90ms 出结论（产品页同）
+const WIN_MS = 8192 / SR * 1000; // 170.67ms
+
+// 六根弦的空弦音高（产品页 judge-loop.js 里的同一张表）
+const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
 
 const inPath = process.argv[2];
 const outPath = process.argv[3];
@@ -50,27 +51,46 @@ function absWindow(fromMs, lenMs) {
   return out;
 }
 
+// 和产品页同一套 opts（见 judge-loop.js 里 judgeNote 的调用处）
+function optsFor(string, fret, level) {
+  const lv = level == null ? 0.12 : level;
+  if (string == null) return { maxOffset: null, bandLo: 0, bandHi: 0 };
+  const open = OPEN[string];
+  if (!open) return { maxOffset: 2, bandLo: 0, bandHi: 0 };
+  const o = 440 * Math.pow(2, (open - 69) / 12);
+  return {
+    maxOffset: 2,
+    rivalMargin: (lv >= 0.10 ? 1.05 : 0.90),
+    bandLo: o * Math.pow(2, -1 / 12),
+    bandHi: o * Math.pow(2, 25 / 12),
+  };
+}
+
 const judged = [];
 for (const p of job.pairs) {
-  const tMs = p.t * 1000;
-  const post = spectrumOf(absWindow(tMs + POST_FROM_MS, POST_LEN_MS));
-  const pre = spectrumOf(absWindow(tMs + PRE_FROM_MS, PRE_LEN_MS));
-  const diff = diffMags(post, pre);
-  const j = judgeNote({
-    spec: diff, sampleRate: SR, fftSize: post.length,
-    expectedMidi: p.expectedMidi, opts: {},
-  });
-  const heardMidi = j.heard == null ? null : j.heard;
+  const spec = spectrumOf(absWindow(p.t * 1000 + JUDGE_AT_MS - WIN_MS, WIN_MS));
+  let r = null;
+  try {
+    r = judgeNote({
+      spec, sampleRate: SR, fftSize: spec.length,
+      expectedMidi: p.expectedMidi,
+      opts: optsFor(p.string, p.fret, p.level),
+    });
+  } catch (e) {
+    r = null;
+  }
+  const heard = r && r.heard != null ? r.heard : null;
   judged.push({
     t: p.t,
     expectedMidi: p.expectedMidi,
     expectedName: midiToName(p.expectedMidi),
-    pass: !!j.pass,
-    heard: heardMidi,
-    heardName: heardMidi == null ? null : midiToName(heardMidi),
-    fit: j.fit == null ? null : Number(j.fit.toFixed(0)),
-    margin: j.margin == null ? null : Number(j.margin.toFixed(3)),
-    octaveBelow: j.octaveBelow || null,
+    string: p.string == null ? null : p.string,
+    fret: p.fret == null ? null : p.fret,
+    pass: !!(r && r.pass),
+    heard,
+    heardName: heard == null ? null : midiToName(heard),
+    fit: r && r.fit != null ? Number(r.fit.toFixed(0)) : null,
+    margin: r && r.margin != null ? Number(r.margin.toFixed(3)) : null,
   });
 }
 
@@ -79,5 +99,5 @@ fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify(out, null, 1), 'utf8');
 
 const ok = judged.filter((x) => x.pass).length;
-console.log(`判定 ${judged.length} 个音：过 ${ok} ｜ 没过 ${judged.length - ok}`);
+console.log(`判定 ${judged.length} 个配对：过 ${ok} ｜ 没过 ${judged.length - ok}`);
 console.log(`结果已写到 ${outPath}`);
