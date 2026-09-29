@@ -43,8 +43,12 @@ def main():
                        page.eval_on_selector('#submit', 'el => el.disabled') is True))
         checks.append(("第一屏：没横向溢出",
                        page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")))
-        page.fill("#url", "https://example.com/demo.mp3")
-        checks.append(("填了直链后提交键变亮",
+        # 页面现在只收文件（2026-09-29 撤掉了直链入口），用一份假音频触发流程
+        demo_audio = os.path.join(OUT, "hg_demo_take.m4a")
+        with open(demo_audio, "wb") as f:
+            f.write(b"\x00" * 4096)
+        page.set_input_files("#file", demo_audio)
+        checks.append(("选好文件后提交键变亮",
                        page.eval_on_selector('#submit', 'el => el.disabled') is False))
         page.click("#submit")
         page.wait_for_selector("#resultCard:not(.hidden)", timeout=20000)
@@ -83,7 +87,7 @@ def main():
         desk = browser.new_page(viewport={"width": 1280, "height": 900})
         desk.goto(URL, wait_until="load", timeout=20000)
         desk.wait_for_timeout(400)
-        desk.fill("#url", "https://example.com/demo.mp3")
+        desk.set_input_files("#file", demo_audio)
         desk.click("#submit")
         desk.wait_for_selector("#resultCard:not(.hidden)", timeout=20000)
         desk.wait_for_timeout(500)

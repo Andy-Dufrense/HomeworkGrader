@@ -6,7 +6,7 @@ const API = '/api';
 let picked = null;          // 选中的文件
 let pollTimer = null;
 let meta = {};              // /api/assignment 回来的作业信息
-let submittedLabel = '';    // 这次交的是什么（文件名 / 直链）
+let submittedLabel = '';    // 这次交的是哪个文件（页面只收上传的文件）
 let currentAid = '';        // 当前选中的作业 id
 let currentStd = {};        // 当前作业的标准（谱面信息）
 let scoreApi = null;        // alphaTab 实例（画谱面用；换作业就销毁重建）
@@ -21,7 +21,7 @@ const el = {
   title: $('title'), subtitle: $('subtitle'), passline: $('passline'),
   facts: $('facts'), source: $('source'), tips: $('tips'),
   drop: $('drop'), file: $('file'), chosen: $('chosen'), chosenName: $('chosenName'),
-  clearFile: $('clearFile'), url: $('url'),
+  clearFile: $('clearFile'),
   submit: $('submit'), submitHint: $('submitHint'),
   progressCard: $('progressCard'), bar: $('bar'), stage: $('stage'), pipe: $('pipe'),
   resultCard: $('resultCard'), reportMeta: $('reportMeta'),
@@ -65,9 +65,8 @@ function fmtSize(n) {
 }
 
 function refreshSubmit() {
-  const ok = !!(picked || el.url.value.trim());
-  el.submit.disabled = !ok;
-  el.submitHint.textContent = ok ? '提交后开始自动批改' : '请先选择文件，或填写音频直链';
+  el.submit.disabled = !picked;
+  el.submitHint.textContent = picked ? '提交后开始自动批改' : '请先选择录音文件';
 }
 
 function setPicked(file) {
@@ -306,7 +305,6 @@ el.clearFile.addEventListener('click', () => setPicked(null));
   e.preventDefault(); el.drop.classList.remove('over');
 }));
 el.drop.addEventListener('drop', e => setPicked((e.dataTransfer.files || [])[0] || null));
-el.url.addEventListener('input', refreshSubmit);
 
 // ── 提交 → 轮询 ──────────────────────────────────────────────────
 el.submit.addEventListener('click', async () => {
@@ -316,20 +314,12 @@ el.submit.addEventListener('click', async () => {
   goStep(2);
   el.bar.style.width = '0%';
   el.stage.textContent = '上传中…';
-  submittedLabel = picked ? picked.name : el.url.value.trim();
+  submittedLabel = picked ? picked.name : '';
   try {
-    let resp;
     const q = '?id=' + encodeURIComponent(currentAid || '');
-    if (picked) {
-      const fd = new FormData();
-      fd.append('audio', picked, picked.name);
-      resp = await fetch(API + '/submit' + q, { method: 'POST', body: fd });
-    } else {
-      resp = await fetch(API + '/submit' + q, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: el.url.value.trim() }),
-      });
-    }
+    const fd = new FormData();
+    fd.append('audio', picked, picked.name);
+    const resp = await fetch(API + '/submit' + q, { method: 'POST', body: fd });
     const j = await resp.json();
     poll(j.task_id);
   } catch (e) {
@@ -515,7 +505,6 @@ el.again.addEventListener('click', () => {
   show(el.resultCard, false);
   show(el.progressCard, false);
   setPicked(null);
-  el.url.value = '';
   submittedLabel = '';
   goStep(1);
   window.scrollTo({ top: 0, behavior: 'smooth' });
