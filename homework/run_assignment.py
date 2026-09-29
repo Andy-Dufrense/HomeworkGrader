@@ -171,17 +171,22 @@ def issues_from_log(log, score, tempo=None):
             title = "本段第 %d 个音" % no
         t_audio = round(float(t_audio), 2) if t_audio is not None else None
         t_score = round(float(sn["t"]), 2) if sn is not None else None
+        item = {"want": want, "got": got, "kind": "wrong_note",
+                "string": (sn or {}).get("string"), "fret": (sn or {}).get("fret"),
+                "want_midi": int(sn["midi"]) if sn is not None else None,
+                "got_midi": row.get("heard"), "measure": measure, "beat": beat,
+                "t_audio": t_audio}
         issues.append({
             "title": title,
             "measure": measure, "beat": beat,
             "note_index": no,
             "t_audio": t_audio, "t_score": t_score,
             "kind": "wrong_note",
-            "detail": "这一处要 %s，听着弹成了约 %s。" % (want, got),
+            "string": (sn or {}).get("string"), "fret": (sn or {}).get("fret"),
+            "want_midi": item["want_midi"], "got_midi": item["got_midi"],
+            "detail": single_detail(item),
             "fix": "把这一处单独拎出来，慢到一半速度，每个音都按实了再连起来。",
-            "items": [{"want": want, "got": got, "kind": "wrong_note",
-                       "measure": measure, "beat": beat, "note_index": no,
-                       "t_audio": t_audio}],
+            "items": [item],
         })
     return issues
 
@@ -260,29 +265,87 @@ def group_detail(g):
     if g.get("kind") in ("extra", "timing"):
         return (g.get("raw") or items[0]).get("detail") or "录音里有对不上谱面的音。"
     if len(items) == 1:
-        return single_detail(*note_pair(items[0]), kind=items[0].get("kind"))
-    parts = [detail_one(*note_pair(i), kind=i.get("kind")) for i in items[:4]]
+        return single_detail(items[0])
+    parts = [detail_one(i) for i in items[:4]]
     tail = "等 %d 处" % len(items) if len(items) > 4 else ""
     return "这一句连着 %d 个音没对上：%s%s。" % (len(items), "、".join(parts), tail)
 
 
-def detail_one(want, got, kind=None):
-    """一处问题的说法：漏弹 / 判定没过（读数就是谱面这个音）/ 弹成了别的音。"""
-    if kind == "missing":
-        return "漏了 %s" % want
+CN_NUM = "一二三四五六七八九"
+
+
+def pos_text(it, score_note=None):
+    """把谱面位置说成人话：**三弦二品** / 二弦空弦。
+
+    ⚠ 用户口径（2026-09-29）：报告里**不出现 A3、B4 这种音名**（太专业），
+    我们有标准谱，指位置就够了。
+    """
+    src = score_note or it or {}
+    s, f = src.get("string"), src.get("fret")
+    if s is None or f is None or not (1 <= int(s) <= 6):
+        return None
+    s, f = int(s), int(f)
+    fret = "空弦" if f == 0 else ("%s品" % (CN_NUM[f - 1] if 1 <= f <= 9 else f))
+    return "%s弦%s" % (CN_NUM[s - 1], fret)
+
+
+def midi_gap(it):
+    """"听着弹成的音"和"谱面这个音"差几个半音（差一品 = 1 个半音）。"""
+    d = it.get("got_midi") if isinstance(it, dict) else None
+    w = it.get("want_midi") if isinstance(it, dict) else None
+    if d is None or w is None:
+        return None
+    return int(d) - int(w)
+
+
+def detail_one(it):
+    """一处问题的说法：漏弹 / 漏判定 / 按错。
+
+    ⚠ 用户口径（2026-09-29）：**不出现 A3、B4 这种音名**（太专业），
+    要说"三弦二品"这种位置话 —— 我们有标准谱，指位置就够了。
+    """
+    it = it or {}
+    want, got = note_pair(it)
+    subject = pos_text(it) or want or "这一处"
+    if it.get("kind") == "missing":
+        return "%s漏了" % (subject or "这一处")
     if not got or got == want:
-        # 判定没过、但引擎量到的就是谱面这个音 —— 多半是没弹实 / 被上一个音盖住
-        return "%s 判定没过（可能没弹实）" % want
-    return "要 %s，听着弹成了约 %s" % (want, got)
+        return "%s没弹实" % subject
+    d = midi_gap(it)
+    if d is None:
+        return "%s听着不是谱面这个音" % subject
+    if d == 1:
+        return "%s按高了一品" % subject
+    if d == -1:
+        return "%s按低了一品" % subject
+    if d in (2, -2):
+        return "%s按%s了两品" % (subject, "高" if d > 0 else "低")
+    if d in (12, -12):
+        return "%s差了八度（多半碰到别的弦了）" % subject
+    return "%s听着不是谱面这个音" % subject
 
 
-def single_detail(want, got, kind=None):
+def single_detail(it):
     """一条问题单独成句时的说法（和 detail_one 同一套口径，只是句子更顺）。"""
-    if kind == "missing":
-        return "这一处漏了 %s。" % want
+    it = it or {}
+    want, got = note_pair(it)
+    subject = pos_text(it) or want or "这一处"
+    if it.get("kind") == "missing":
+        return "这里%s漏了一下。" % subject
     if not got or got == want:
-        return "这一处的 %s 判定没过（可能没弹实，或者被上一个音盖住了）。" % want
-    return "这一处要 %s，听着弹成了约 %s。" % (want, got)
+        return "这里%s没弹实（或者被上一个音盖住了）。" % subject
+    d = midi_gap(it)
+    if d is None:
+        return "这里%s，听着不是谱面这个音。" % subject
+    if d == 1:
+        return "这里%s，听着按高了一品。" % subject
+    if d == -1:
+        return "这里%s，听着按低了一品。" % subject
+    if d in (2, -2):
+        return "这里%s，听着%s了两品。" % (subject, "高" if d > 0 else "低")
+    if d in (12, -12):
+        return "这里%s，听着差了八度（多半碰到别的弦了）。" % subject
+    return "这里%s，听着不是谱面这个音。" % subject
 
 
 def note_pair(it):
@@ -640,6 +703,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     for j, sn in enumerate(score):
         base = {"score_idx": j, "t_score": sn["t"], "want": note_name(sn["midi"]),
                 "string": sn.get("string"), "fret": sn.get("fret"),
+                "want_midi": int(sn["midi"]),
                 "measure": sn.get("measure"), "beat": sn.get("beat")}
         if j not in match:
             rows.append(dict(base, kind="missing", t_audio=None, got=None))
@@ -655,10 +719,10 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
         #   这类**算过**，但会在过程提醒里说明白，不让它变成一个看不见的宽容。
         if (not jd["pass"]) and jd.get("heardName") == want:
             weak += 1
-            rows.append(dict(base, kind="ok", got=want, weak=True))
+            rows.append(dict(base, kind="ok", got=want, got_midi=jd.get("heard"), weak=True))
             continue
         rows.append(dict(base, kind="ok" if jd["pass"] else "wrong_note",
-                         got=jd.get("heardName")))
+                         got=jd.get("heardName"), got_midi=jd.get("heard")))
     for i in sorted(extra):
         rows.append({"score_idx": None, "kind": "extra", "t_audio": events[i]["t"],
                      "want": None, "got": None, "measure": None, "beat": None})
@@ -723,20 +787,24 @@ def issues_from_rows(rows, score, tempo=None):
             title = "本段第 %d 个音" % (j + 1)
         else:
             title = "录音里多出来的音"
-        detail = single_detail(want, got, kind=r["kind"])
         t_audio = r.get("t_audio")
+        item = {"want": want, "got": got, "kind": r["kind"],
+                "string": r.get("string"), "fret": r.get("fret"),
+                "want_midi": r.get("want_midi"), "got_midi": r.get("got_midi"),
+                "measure": measure, "beat": beat,
+                "t_audio": round(float(t_audio), 2) if t_audio is not None else None}
+        detail = single_detail(item)
         out.append({
             "title": title, "measure": measure, "beat": beat,
             "note_index": (j + 1) if j is not None else None,
             "t_audio": round(float(t_audio), 2) if t_audio is not None else None,
             "t_score": round(float(sn["t"]), 2) if sn is not None else None,
-            "kind": r["kind"],
+            "kind": r["kind"], "string": r.get("string"), "fret": r.get("fret"),
+            "want_midi": r.get("want_midi"), "got_midi": r.get("got_midi"),
             "detail": detail,
             "fix": ("先单独把这一处补上，确认按实了再往下连。" if r["kind"] == "missing"
                     else "把这一处单独拎出来，慢到一半速度，每个音都按实了再连起来。"),
-            "items": [{"want": want, "got": got, "kind": r["kind"],
-                       "measure": measure, "beat": beat,
-                       "t_audio": round(float(t_audio), 2) if t_audio is not None else None}],
+            "items": [item],
         })
     return out
 
@@ -932,8 +1000,8 @@ def main(argv=None):
         process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])],
                                 score, pauses=pauses)
         if pinfo.get("weak_confirmed"):
-            process.insert(0, "有 %d 处引擎自己量到的音名就是谱面那个音、只是判定证据偏弱"
-                              "（多半是前一个音还在响）—— 这几处按「音名一致」算过。"
+            process.insert(0, "有 %d 处听着就是谱面那个位置，只是这一下不够实"
+                              "（多半是上一个音还在响）—— 这几处算过。"
                            % pinfo["weak_confirmed"])
         # 节奏：单个音的抢/拖**不报**（用户 2026-09-29：拖个零点几秒可以容忍），
         # 只在"一会儿快一会儿慢、明显不一致"的段落提醒一句。

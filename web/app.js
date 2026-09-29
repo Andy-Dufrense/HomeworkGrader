@@ -260,8 +260,6 @@ function drawMarks(beats, segNotes, errors) {
       label = e.sub === 'early' ? '抢' : (e.sub === 'late' ? '拖' : '停');
       const secs = (e.seconds != null) ? e.seconds : (e.dev != null ? Math.abs(e.dev) : null);
       if (secs != null) label += ' ' + secs + 's';
-    } else if (e.want) {
-      label += ' ' + e.want;
     }
     div.innerHTML = '<b>' + esc(label) + '<\/b>';
     el.scoreMarks.appendChild(div);
