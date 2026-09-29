@@ -10,6 +10,7 @@ let submittedLabel = '';    // 这次交的是哪个文件（页面只收上传�
 let currentAid = '';        // 当前选中的作业 id
 let currentStd = {};        // 当前作业的标准（谱面信息）
 let scoreApi = null;        // alphaTab 实例（画谱面用；换作业就销毁重建）
+let assignReady = null;     // 作业信息加载的 Promise（提交前等它，别用空作业 id 去提交）
 
 const el = {
   course: $('course'), verTag: $('verTag'),
@@ -292,11 +293,16 @@ fetch(API + '/assignments').then(r => r.json()).then(({ assignments, current }) 
   });
 });
 
-loadAssignment();
+assignReady = loadAssignment();
 
 // ── 选文件 / 拖拽 ────────────────────────────────────────────────
-el.drop.addEventListener('click', () => el.file.click());
-el.file.addEventListener('change', () => setPicked(el.file.files[0] || null));
+// 开文件对话框**只留一条路**：<label for="file"> 的原生行为。
+// （以前这里还挂了一句 el.file.click()，等于一次点击开两次对话框：
+//   第一次选的会被后开的那个顶掉，表现就是"第一次上不去、第二次才行"。）
+el.file.addEventListener('change', () => {
+  setPicked(el.file.files[0] || null);
+  el.file.value = '';       // 清掉，允许再选同一个文件（否则 change 不会触发）
+});
 el.clearFile.addEventListener('click', () => setPicked(null));
 ['dragenter', 'dragover'].forEach(ev => el.drop.addEventListener(ev, e => {
   e.preventDefault(); el.drop.classList.add('over');
@@ -314,6 +320,8 @@ el.submit.addEventListener('click', async () => {
   goStep(2);
   el.bar.style.width = '0%';
   el.stage.textContent = '上传中…';
+  // 等作业信息加载完再提交：不然第一次点得太快，会带着空作业 id 提交（判到别的作业上）
+  if (assignReady) { try { await assignReady; } catch (e) { /* 没加载上就按默认作业走 */ } }
   submittedLabel = picked ? picked.name : '';
   try {
     const q = '?id=' + encodeURIComponent(currentAid || '');
