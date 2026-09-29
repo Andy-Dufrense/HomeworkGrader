@@ -37,6 +37,7 @@ if HERE not in sys.path:
 from align import align, align_by_time, load_score, note_name   # noqa: E402
 from grade import aggregate, describe                          # noqa: E402
 from reference import build_timeline, crop_notes, write_ref    # noqa: E402
+import issue_types as IT                                       # noqa: E402
 
 JOBS = os.path.join(ROOT, "data", "jobs")
 
@@ -237,7 +238,7 @@ def group_issues(issues):
                        "raw": it, "kind": kind, "mergeable": mergeable})
     for g in groups:
         # 节奏/多弹这类，标题和说法都用它自己的（别套单音那套）
-        g["title"] = (g["raw"].get("title") if g["kind"] in ("extra", "timing")
+        g["title"] = (g["raw"].get("title") if g["kind"] not in ("missing_note", "wrong_note")
                       else group_title(g))
         g["detail"] = group_detail(g)
         g["fix"] = group_fix(g)
@@ -267,8 +268,9 @@ def group_title(g):
 
 def group_detail(g):
     items = g["items"]
-    # "节奏 / 多弹/杂音"这两类是手写好的整条问题，别拿单音那套说法去套
-    if g.get("kind") in ("extra", "timing"):
+    # 只有"漏 / 错"这两类是逐音对错，其余（多弹、抢、拖、停、节奏不稳）
+    # 都是**手写好的整条问题**，别拿单音那套说法去套
+    if g.get("kind") not in ("missing_note", "wrong_note"):
         return (g.get("raw") or items[0]).get("detail") or "录音里有对不上谱面的音。"
     if len(items) == 1:
         return single_detail(items[0])
@@ -313,7 +315,7 @@ def detail_one(it):
     it = it or {}
     want, got = note_pair(it)
     subject = pos_text(it) or want or "这一处"
-    if it.get("kind") == "missing":
+    if it.get("kind") == "missing_note":
         return "%s漏了" % (subject or "这一处")
     if not got or got == want:
         return "%s没弹实" % subject
@@ -336,7 +338,7 @@ def single_detail(it):
     it = it or {}
     want, got = note_pair(it)
     subject = pos_text(it) or want or "这一处"
-    if it.get("kind") == "missing":
+    if it.get("kind") == "missing_note":
         return "这里%s漏了一下。" % subject
     if not got or got == want:
         return "这里%s没弹实（或者被上一个音盖住了）。" % subject
@@ -554,6 +556,9 @@ def verdict_text(score, pass_line, key_groups, process, total_issues):
                     % (total_issues, key_groups[0]["title"]))
         return head + "整段是稳的。"
     head = "这次 %d 分，没到及格线 %d 分，差得不远。" % (score, pass_line)
+    if total_issues:
+        head = ("这次 %d 分，没到及格线 %d 分；挑出 %d 处要改的地方，差得不远。"
+                % (score, pass_line, total_issues))
     if key_groups:
         head += "最要紧的是%s——%s" % (key_groups[0]["title"],
                                    key_groups[0]["detail"])
@@ -803,7 +808,7 @@ def issues_from_rows(rows, score, tempo=None):
         else:
             title = "录音里多出来的音"
         t_audio = r.get("t_audio")
-        item = {"want": want, "got": got, "kind": r["kind"],
+        item = {"want": want, "got": got, "kind": IT.normalize(r["kind"]),
                 "string": r.get("string"), "fret": r.get("fret"),
                 "want_midi": r.get("want_midi"), "got_midi": r.get("got_midi"),
                 "measure": measure, "beat": beat,
@@ -814,7 +819,7 @@ def issues_from_rows(rows, score, tempo=None):
             "note_index": (j + 1) if j is not None else None,
             "t_audio": round(float(t_audio), 2) if t_audio is not None else None,
             "t_score": round(float(sn["t"]), 2) if sn is not None else None,
-            "kind": r["kind"], "string": r.get("string"), "fret": r.get("fret"),
+            "kind": IT.normalize(r["kind"]), "string": r.get("string"), "fret": r.get("fret"),
             "want_midi": r.get("want_midi"), "got_midi": r.get("got_midi"),
             "detail": detail,
             "fix": ("先单独把这一处补上，确认按实了再往下连。" if r["kind"] == "missing"
@@ -1016,9 +1021,10 @@ def main(argv=None):
                            and sn.get("measure") is not None else None,
                 "beat": (beats.get(j) if sn is not None else None),
                 "note_index": j + 1, "t_audio": m.get("t_audio"),
-                "t_score": m.get("t_score"), "kind": "timing",
+                "t_score": m.get("t_score"), "kind": IT.normalize("timing", sub),
                 "detail": detail, "fix": "开着节拍器，从慢速把这一句走顺。",
-                "items": [{"want": None, "got": None, "kind": "timing",
+                "items": [{"want": None, "got": None,
+                           "kind": IT.normalize("timing", sub),
                            "measure": None, "beat": None, "t_audio": m.get("t_audio")}],
             })
         if rep.get("repeat"):
@@ -1027,30 +1033,18 @@ def main(argv=None):
             issues.append({
                 "title": "有 %d 个音没对上谱面" % rep["count"],
                 "measure": None, "beat": None, "note_index": None,
-                "t_audio": None, "t_score": None, "kind": "extra",
+                "t_audio": None, "t_score": None, "kind": "extra_note",
                 "detail": ("录音里有 %d 个音对不上谱面 —— 可能是多弹，也可能是杂音，"
                            "这一段没算进分数。" % rep["count"]),
                 "fix": "对着谱子再走一遍，只弹谱面上的音。",
-                "items": [{"want": None, "got": None, "kind": "extra",
+                "items": [{"want": None, "got": None, "kind": "extra_note",
                            "measure": None, "beat": None, "t_audio": None}],
             })
-        sc = score_of(counts, len(score))
-        groups = rank_groups(group_issues(issues))
-        key_groups = groups[:KEY_ISSUES]
-        rest_groups = groups[KEY_ISSUES:]
-        pauses = [(m["t_audio"], m["seconds"]) for m in pinfo.get("timing_marks", [])
-                  if m.get("seconds") is not None]
-        process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])],
-                                score, pauses=pauses)
-        if pinfo.get("weak_confirmed"):
-            process.insert(0, "有 %d 处听着就是谱面那个位置，只是这一下不够实"
-                              "（多半是上一个音还在响）—— 这几处算过。"
-                           % pinfo["weak_confirmed"])
-        # 节奏：单个音的抢/拖**不报**（用户 2026-09-29：拖个零点几秒可以容忍），
-        # 只在"一会儿快一会儿慢、明显不一致"的段落提醒一句。
+        # ── 节奏不稳：一段一张卡（"这一段 70、那一段 90"那种）──
+        # ⚠ 顺序要紧：**先把所有问题都生成出来，再分组/排序** ——
+        #   不然会出现"报告说 3 处、却摆了 4 张卡"（学隔壁那条事故的教训）。
         spans = pinfo.get("unstable_spans") or []
         if spans:
-            process = [p for p in process if not p.startswith("整段速度和节奏是稳的")]
             sp = spans[0]
 
             def _where(a, b):
@@ -1062,7 +1056,7 @@ def main(argv=None):
                     return "第 %d~%d 小节" % (int(sa["measure"]) + 1, int(sb["measure"]) + 1)
                 return "第 %d~%d 个音" % (a + 1, b + 1)
 
-            # 按小节先后说（老师说话的顺序：先早的那段，再说后面变成多少）
+            # 按小节先后说（老师说话的顺序：先说早的那段，再说后面变成多少）
             if sp["from"] <= sp["fast_from"]:
                 first, first_bpm, later, later_bpm = (
                     _where(sp["from"], sp["to"]), sp["bpm"],
@@ -1073,15 +1067,42 @@ def main(argv=None):
                     _where(sp["fast_from"], sp["fast_to"]), sp["fast_bpm"],
                     _where(sp["from"], sp["to"]), sp["bpm"])
                 how = "慢了"
-            process.append("节奏不稳：%s大概 %d 拍/分，到了%s变成 %d 左右（%s约 %d%%）—— "
+            issues.append({
+                "title": "节奏不稳（%s → %s）" % (first, later),
+                "measure": None, "beat": None, "note_index": None,
+                "t_audio": None, "t_score": None, "kind": "rhythm_unstable",
+                "detail": ("%s大概 %d 拍/分，到了%s变成 %d 左右（%s约 %d%%）—— "
                            "这一遍一会儿快一会儿慢，跟着节拍器再走两遍。"
                            % (first, first_bpm, later, later_bpm, how,
-                              int(round((sp["ratio"] - 1) * 100))))
+                              int(round((sp["ratio"] - 1) * 100)))),
+                "fix": "开着节拍器，整段慢速走两遍。",
+                "items": [{"want": None, "got": None, "kind": "rhythm_unstable",
+                           "measure": None, "beat": None, "t_audio": None}],
+            })
+
+        sc = score_of(counts, len(score))
+        groups = rank_groups(group_issues(issues))
+        key_groups = groups[:KEY_ISSUES]
+        rest_groups = groups[KEY_ISSUES:]
+        pauses = [(m["t_audio"], m["seconds"]) for m in pinfo.get("timing_marks", [])
+                  if m.get("seconds") is not None]
+        process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])],
+                                score, pauses=pauses)
+        if spans:
+            process = [p for p in process if not p.startswith("整段速度和节奏是稳的")]
+        if pinfo.get("weak_confirmed"):
+            process.insert(0, "有 %d 处听着就是谱面那个位置，只是这一下不够实"
+                              "（多半是上一个音还在响）—— 这几处算过。"
+                           % pinfo["weak_confirmed"])
         if rep.get("repeat"):
             process.insert(0, "你把作业弹了两遍：第二遍有 %d/%d 个音也对上了。"
                               "作业只需要一遍，多出来的第二遍没算进分数。"
                            % (rep.get("matched", 0), rep.get("score_notes", len(score))))
-        n_problems = sum(1 for it in issues if it.get("kind") != "extra")
+        # ⚠ "报告里说几处" 必须等于 "界面上摆出来的卡片数"（学隔壁那次事故的教训）：
+        #   卡片 = 合并后的组（一句连着 3 个音算 1 处），所以这里数**组数**，
+        #   而页面渲染的正好是 key_issues(前 3 张) + more_issues(其余)。
+        n_problems = len(groups)
+        assert len(key_groups) + len(rest_groups) == n_problems, "卡片数和处数对不上"
         vtext = verdict_text(sc, PASS_LINE, key_groups, process, n_problems)
         print("")
         print("=" * 70)
@@ -1149,6 +1170,8 @@ def main(argv=None):
                            + [dict(m, kind="timing")
                               for m in pinfo.get("timing_marks") or []],
             "process": process,
+            "issue_labels": IT.LABELS,          # 前端的类型标签只认这一份（别两边各写一套）
+            "issue_total": n_problems,
             "score_notes": [{"t": round(n["t"], 3), "string": n.get("string"),
                              "midi": int(n["midi"])} for n in score],
             "error_marks": [],

@@ -253,11 +253,11 @@ function drawMarks(beats, segNotes, errors) {
     div.style.top = Math.round(vb.y + off.y) + 'px';
     div.style.width = Math.max(9, Math.round(vb.w)) + 'px';
     div.style.height = Math.max(9, Math.round(vb.h)) + 'px';
-    // 标记上写清"是什么错"：漏 A3 / 错 C4 / 抢 0.3s / 拖 0.4s / 停 1.2s
-    // （用户 2026-09-29：别让我再回头猜是哪一种）
-    let label = KIND_LABEL[e.kind] || '错';
-    if (e.kind === 'timing') {
-      label = e.sub === 'early' ? '抢' : (e.sub === 'late' ? '拖' : '停');
+    // 标记上写清"是什么错"：漏 / 错 / 抢 0.3s / 拖 1.2s / 停 1.4s
+    // （用户 2026-09-29：别让我再回头猜是哪一种；标签表来自服务端）
+    let label = kindLabel(e.kind, render.last) || '错';
+    if (e.kind === 'rush' || e.kind === 'drag' || e.kind === 'pause'
+        || e.sub === 'early' || e.sub === 'late') {
       const secs = (e.seconds != null) ? e.seconds : (e.dev != null ? Math.abs(e.dev) : null);
       if (secs != null) label += ' ' + secs + 's';
     }
@@ -374,6 +374,7 @@ function poll(id) {
 
 // ── 出报告 ───────────────────────────────────────────────────────
 function render(r) {
+  render.last = r;                 // 类型标签表从服务端来，后面画标记时要用
   show(el.resultCard, true);
   goStep(3);
   const a = r.assignment || meta;
@@ -437,7 +438,7 @@ function render(r) {
   const more = r.more_issues || [];
   const card = (it) => `
       <div class="issue">
-        <div class="ih">${kindBadge(it.kind)}<span>${esc(it.title)}</span>
+        <div class="ih">${kindBadge(it.kind, r)}<span>${esc(it.title)}</span>
           <span class="t">${esc(issueTime(it))}</span></div>
         <div class="d">${esc(it.detail)}</div>
       </div>`;
@@ -448,6 +449,7 @@ function render(r) {
     ? '这次的小问题（' + key.length + ' 处，不拦你过）'
     : '先改这几处（' + key.length + ' 处）';
   el.issueFold.open = true;      // 一律默认展开：用户要的是"老师指着谱子告诉我哪错了"
+  el.resultCard.dataset.issueTotal = String((r.issues || []).length);
   el.moreCount.textContent = more.length;
   renderMoreIssues(more);
   el.demoNote.textContent = r.note;
@@ -473,11 +475,18 @@ function issueTime(it) {
   return parts.join(' · ') || '—';
 }
 
-// 错误类型徽章：让报告一眼看出"是漏了、还是弹错了、还是节奏没对上"
-const KIND_LABEL = { missing: '漏', wrong_note: '错', extra: '多弹', timing: '节奏' };
-function kindBadge(kind) {
-  if (!kind || !KIND_LABEL[kind]) return '';
-  return '<i class="badge k-' + esc(kind) + '">' + esc(KIND_LABEL[kind]) + '</i>';
+// 错误类型徽章。标签**只认服务端给的那一份**（homework/issue_types.py 是单一来源，
+// 学隔壁那条教训：两边各写一套就会"数了却渲染不出来"）。这里的兜底只在老数据上生效。
+const KIND_FALLBACK = { missing_note: '漏', wrong_note: '错', extra_note: '多弹',
+                        rush: '抢', drag: '拖', pause: '停', rhythm_unstable: '节奏不稳' };
+function kindLabel(kind, r) {
+  const table = (r && r.issue_labels) || (render.last && render.last.issue_labels) || {};
+  return table[kind] || KIND_FALLBACK[kind] || '';
+}
+function kindBadge(kind, r) {
+  const label = kindLabel(kind, r);
+  if (!kind || !label) return '';
+  return '<i class="badge k-' + esc(kind) + '">' + esc(label) + '</i>';
 }
 
 refreshSubmit();

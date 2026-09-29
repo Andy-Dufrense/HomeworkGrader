@@ -106,6 +106,15 @@ def main():
                        page.eval_on_selector('#progressCard', 'el => el.hidden') is True))
         checks.append(("结果页：问题卡有内容",
                        page.eval_on_selector('#issues', 'el => el.children.length') >= 1))
+        # 学隔壁那条教训：**报告说几处 == 真摆出来几张卡**（不许数了却没渲染）
+        cards = page.evaluate("""() => {
+          const n = document.querySelectorAll('#issues .issue').length
+                  + document.querySelectorAll('#moreIssues .issue').length;
+          const total = Number(document.getElementById('resultCard').dataset.issueTotal || -1);
+          return {n: n, total: total};
+        }""")
+        checks.append(("结果页：卡片数 == 报告的处数（%d/%d）"
+                       % (cards["n"], cards["total"]), cards["n"] == cards["total"]))
         # 出结果后：标准谱面画出来 + 错音被框红（最多等 15 秒）
         try:
             page.wait_for_selector("#scoreView svg", timeout=15000)
