@@ -38,9 +38,6 @@ FOLLOW_LIB = os.environ.get("GUITARFOLLOW_PYTHONPATH", r"E:\VirtuCoach-Lib")
 
 # Q6「以吉他为准」：轨名里带这些词的就当吉他
 GUITAR_HINTS = ("guitar", "gtr", "吉他", "吉它", "acoustic", "electric")
-# 反过来：轨名叫这些的，选它当标准要提醒一句
-NOT_GUITAR_HINTS = ("vocal", "voice", "sing", "choir", "piano", "keys",
-                    "bass", "drum", "percussion", "弦乐", "人声", "鼓")
 
 # gp_timeline.py 打的轨道行：  [2] Guitar                 6 弦  调弦 E4 B3 G3 D3 A2 E2          音符  285
 TRACK_RE = re.compile(r"^\s*\[(\d+)\]\s+(.*?)\s+(\d+)\s*弦\s+调弦\s+(.*?)\s+音符\s+(\d+)(.*)$")
@@ -66,7 +63,7 @@ def list_tracks(log):
 
 
 def pick_track(tracks):
-    """Q6「以吉他为准」——返回 (选中的轨道, 为什么选它)。
+    """Q6「以吉他为准」——返回 (选中的轨道, 为什么选它, 有没有把握)。
 
     先按轨名认吉他；认不出来就退回第 0 条非打击轨（跟弹那边 gp_timeline.py 的默认），
     并且**把理由打出来**，让人一眼能看见"标准答案取的是哪条线"。
@@ -77,13 +74,15 @@ def pick_track(tracks):
     named = [t for t in tracks
              if not t["percussion"]
              and any(h in t["name"].lower() for h in GUITAR_HINTS)]
-    if named:
+    if len(named) == 1:
+        return named[0], "轨名里认出来是吉他", True
+    if len(named) > 1:
         best = max(named, key=lambda t: t["notes"])
-        return best, "轨名里有“吉他/ Guitar ”"
+        return best, ("有 %d 条轨的名字像吉他，取音最多的那条（不对就 --track N）" % len(named)), False
     rest = [t for t in tracks if not t["percussion"]]
     if rest:
-        return rest[0], "轨名里没有吉他，退回第 0 条非打击轨（不是这条就 --track N）"
-    return None, "没有非打击轨"
+        return rest[0], "轨名里没有吉他，退回第 0 条非打击轨（不是这条就 --track N）", False
+    return None, "没有非打击轨", False
 
 
 def _run_timeline(gp_path, track):
@@ -120,15 +119,18 @@ def build_timeline(gp_path, track=None):
     tracks = list_tracks(log)
     used = (meta.get("track") or {}).get("index")
     why = ""
+    confident = False
     if track is None:
-        want, why = pick_track(tracks)
+        want, why, confident = pick_track(tracks)
         if want is not None and want["index"] != used:
             meta, notes, log2 = _run_timeline(gp_path, want["index"])
             log = log + "\n" + log2
             used = want["index"]
     else:
         why = "命令行指定 --track %d" % track
+        confident = True
     meta["_track_why"] = why
+    meta["_track_confident"] = confident
     meta["_tracks"] = tracks
     meta["_track_index"] = used
     return meta, notes, log
@@ -218,8 +220,8 @@ def main(argv=None):
     if meta.get("_track_why"):
         print("  选轨理由：%s" % meta["_track_why"])
     used_name = next((t["name"] for t in tracks if t["index"] == used), "")
-    if any(h in (used_name or "").lower() for h in NOT_GUITAR_HINTS):
-        print("  ⚠ 这条轨叫「%s」，看名字不像吉他 —— 确认一下是不是要 --track N 换一条（Q6）"
+    if not meta.get("_track_confident"):
+        print("  ⚠ 这条轨是不是吉他**没把握**（名字叫「%s」）—— 用 --track N 换一条再跑一遍（Q6）"
               % used_name)
 
     keep, desc = crop_notes(notes, args.slice, args.bars)

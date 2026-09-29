@@ -76,9 +76,9 @@ fetch(API + '/assignment').then(r => r.json()).then(({ assignment: a, demo, real
   el.subtitle.textContent = a.artist;
   el.passline.textContent = '及格线 ' + a.pass_line;
   el.track.textContent = a.track;
-  el.bpm.textContent = a.bpm + ' BPM';
-  el.measures.textContent = a.measures + ' 小节';
-  el.source.textContent = '标准答案用的是老师上传的谱面（.gp），不是某一次录音。';
+  el.bpm.textContent = (a.bpm == null ? '—' : a.bpm + ' BPM');
+  el.measures.textContent = (a.measures == null ? '—' : a.measures + ' 小节');
+  el.source.textContent = a.source || '标准答案用的是老师上传的谱面（.gp），不是某一次录音。';
   el.tips.innerHTML = a.record_tips.map(t => '<li>' + t + '</li>').join('');
   el.demoBanner.hidden = false;
   el.demoBanner.classList.toggle('is-real', !demo);

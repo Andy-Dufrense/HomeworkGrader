@@ -252,6 +252,22 @@ def main(argv=None):
         raise SystemExit("这份参考里没有音")
     score, crop_desc = crop_notes(score_all, args.ref_slice, args.ref_bars)
     ref_path = write_ref(os.path.join(jobdir, "ref.json"), meta, score, crop_desc)
+    # 这次作业的"标准"是什么 —— 报告和页面都要写清楚（用户口径：以吉他为准、弹得跟谱子一样就行）
+    tr = meta.get("track") or {}
+    measures = meta.get("measures")
+    standard = {
+        "title": meta.get("title"), "artist": meta.get("artist"),
+        "tempo": meta.get("tempo"), "measures": measures,
+        "track_index": meta.get("_track_index"), "track_name": tr.get("name"),
+        "track_tuning": tr.get("tuning"),
+        "track_confident": meta.get("_track_confident"),
+        "track_why": meta.get("_track_why"),
+        "notes": len(score), "notes_all": len(score_all), "crop": crop_desc,
+        "source": ref_src, "source_kind": label,
+    }
+    bars = [int(n["measure"]) + 1 for n in score if n.get("measure") is not None]
+    if bars:
+        standard["bar_from"], standard["bar_to"] = min(bars), max(bars)
     print("参考谱面（%s）%s：%d 个音，%.2f~%.2f s，音高 %s~%s"
           % (label, os.path.basename(ref_src), len(score_all),
              score_all[0]["t"], score_all[-1]["t"],
@@ -287,6 +303,7 @@ def main(argv=None):
         result = {
             "job": args.job, "ref": ref_src, "audio": args.audio,
             "ref_used": ref_path, "ref_crop": crop_desc, "ref_notes": len(score),
+            "standard": standard,
             "engine": "GuitarFollow 产品页链路（test-follow-real.mjs）",
             "align": {"mode": "跟弹链路自带（按播放位置）", "low_confidence": False,
                       "confidence": None},
@@ -321,6 +338,7 @@ def main(argv=None):
             "score_notes": result["score_notes"],
             "error_marks": result["error_marks"],
             "ref_crop": crop_desc, "ref_notes": len(score), "judged_slots": judged,
+            "standard": standard,
             "note": "数字来自跟弹产品页那条链路（同一份判定代码），用的是真实录音。"
                     + tally_note,
         }

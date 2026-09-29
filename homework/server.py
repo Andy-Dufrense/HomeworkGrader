@@ -58,13 +58,15 @@ AUDIO_OFFSET = 2.50
 # ── 真实批改结果（有的话优先用它）────────────────────────────────────────
 # 链路：run_assignment.py --engine follow → data/jobs/<job>/page.json
 # 给了就用真数字，没给就退回下面的 9-24 样例数字（页面会标明是 demo）。
-JOB = os.environ.get("HOMEWORK_JOB", "6415")
+# 默认给页面看的那次批改：Q32 说的 demo 就是「这节课作业是 Hey Jude」，
+# 而且它走的是真产品那条路（老师上传的 .gp → 参考时间轴）。换别的就设 HOMEWORK_JOB。
+JOB = os.environ.get("HOMEWORK_JOB", "hey-jude-01")
 REAL_PAGE = os.path.join(ROOT, "data", "jobs", JOB, "page.json")
 REAL_RESULT = os.path.join(ROOT, "data", "jobs", JOB, "result.json")
 
 REAL_ASSIGNMENT = {
     "id": JOB,
-    "course": "一对一 · 分解和弦练习",
+    "course": "一对一 · 课后作业",
     "title": "Am–F–C–G（6415）· T3231323",
     "artist": "练习样例 · 真机录音",
     "bpm": 76,
@@ -80,13 +82,48 @@ REAL_ASSIGNMENT = {
 }
 
 
+def assignment_from_standard(page):
+    """作业卡用**这份参考谱面自己的信息**。
+
+    用户口径（2026-09-29）：不管多少轨，目标就是吉他；只要弹得跟谱子上一样就行。
+    所以卡片上要写清"标准答案是哪份谱、哪条轨、这次要弹多少个音"，
+    而不是写死一个作业名。
+    """
+    std = page.get("standard") or {}
+    a = dict(REAL_ASSIGNMENT)                       # 课程/课时这类后台才知道的先用默认
+    if std.get("title"):
+        a["title"] = std["title"]
+    if std.get("artist"):
+        a["artist"] = std["artist"]
+    if std.get("tempo"):
+        a["bpm"] = std["tempo"]
+    a["measures"] = std.get("measures")
+    if std.get("track_name"):
+        a["track"] = "吉他轨 [%s] %s" % (std.get("track_index"), std["track_name"])
+    elif std.get("track_index") is not None:
+        a["track"] = "吉他轨 [%s]" % std["track_index"]
+    else:
+        a["track"] = "吉他（老师上传的谱面）"
+    bits = ["标准答案：老师上传的 Guitar Pro 谱面（.gp → 时间轴）"]
+    if std.get("notes"):
+        bits.append("这次要弹 %d 个音" % std["notes"])
+    if std.get("bar_from") and std.get("bar_to"):
+        bits.append("有音的小节 %d~%d" % (std["bar_from"], std["bar_to"]))
+    if std.get("crop"):
+        bits.append("取段 %s" % std["crop"])
+    if std.get("track_confident") is False:
+        bits.append("⚠ 这条轨是不是吉他没把握，请跟老师核一下")
+    a["source"] = " · ".join(bits)
+    return a
+
+
 def load_real():
     """读真实批改结果（run_assignment.py 产出的 page.json）。"""
     if not os.path.exists(REAL_PAGE):
         return None
     with io.open(REAL_PAGE, encoding="utf-8") as f:
         page = json.load(f)
-    page["assignment"] = REAL_ASSIGNMENT
+    page["assignment"] = assignment_from_standard(page)
     page["real"] = True
     if os.path.exists(REAL_RESULT):
         with io.open(REAL_RESULT, encoding="utf-8") as f:
