@@ -20,15 +20,32 @@ start.bat -o           :: 可选：用 Edge/Chrome 打开（绝不会走 IE）
 
 ```bat
 E:\Python\python.exe -X utf8 homework\run_assignment.py ^
-  --ref   E:\GuitarFollowLab\frontend\data\chord_arp.json ^
+  --ref   C:\Users\Administrator\vc_gf\tl-6415.json ^
   --audio E:\GuitarFollowLab\sound_data\f32\6415\6415慢速.f32 ^
-  --job   6415 --engine follow
+  --job   6415 --engine follow --ref-slice 1:32
+```
+
+作业的参考谱面是**老师上传的那份 .gp**（Q5/Q30）时，直接给它小节范围：
+
+```bat
+E:\Python\python.exe -X utf8 homework\run_assignment.py ^
+  --ref-gp E:\GuitarFollowLab\.gp\the-beatles-hey_jude.gp3 --ref-track 0 --ref-bars 1:8 ^
+  --audio  E:\GuitarFollowLab\sound_data\f32\hey_jude.f32 ^
+  --job    heyjude-b1-8 --engine follow
+```
+
+只看参考谱面（`.gp → 这次作业那一段`）：
+
+```bat
+E:\Python\python.exe -X utf8 homework\reference.py ^
+  --gp E:\GuitarFollowLab\.gp\the-beatles-hey_jude.gp3 --track 0 --bars 1:8 ^
+  --out scores\hey-jude\lesson06\assignment.json
 ```
 
 链路（铁律 Q15 / Q29）：
 
 ```
-参考谱面(.gp → 时间轴)
+参考谱面(.gp → 时间轴，按这次作业的小节/音序号裁段)
   → 起音           Node 子进程，跑跟弹产品页自己的链路（引擎只有那一份代码）
   → 对齐           身份锚定优先；读不出音高时退回按时间对齐（并标低置信度）
   → 判定           Node 子进程，逐音问"我要的这个音在不在这一下"
@@ -36,7 +53,8 @@ E:\Python\python.exe -X utf8 homework\run_assignment.py ^
 ```
 
 **注意**：`--engine follow` 会调用隔壁的 `E:\GuitarFollowLab`（路径可用环境变量
-`GUITARFOLLOW_REPO` 覆盖）。
+`GUITARFOLLOW_REPO` 覆盖）；`.gp` 的解析也走它（`backend\tools\gp_timeline.py`，
+`PYTHONPATH` 用 `E:\VirtuCoach-Lib`，可用 `GUITARFOLLOW_PYTHONPATH` 覆盖）。
 
 ## 现在到哪儿了
 
@@ -49,6 +67,8 @@ E:\Python\python.exe -X utf8 homework\run_assignment.py ^
 | 前端（三步流程 + 结果页） | ✅ `web/`，自检 11 项全过（`tools/shot_web.py`） |
 | 首次真机实测 | ✅ 6415 分解和弦：起音 55 ｜ 对 30 / 错 3 / 漏 0 |
 | 引擎接入方式 | ✅ 走跟弹产品页那条链路（自己拼 engine 调用数字对不上，已放弃） |
+| 参考谱面（.gp → 作业那一段，`reference.py`） | ✅ 2026-09-29；完成度从 34% 修到 94% |
+| 问题卡定位（小节拍 + 录音秒 + 谱面秒） | ✅ 2026-09-29；定位改用跟弹的逐音导出记录 |
 | 音轨分离（自动判断）／降噪／节奏网格／报告话术 | 🔜 还没做 |
 
 ## 文档在哪
@@ -60,13 +80,14 @@ E:\Python\python.exe -X utf8 homework\run_assignment.py ^
 | `三个项目的关系.md` | 它和 VirtuCoach / GuitarFollowLab 谁是谁、谁连谁、谁能改什么 |
 | `实测-对齐-2026-09-24.md` | 第一次对齐实测（为什么不能"只看时间"） |
 | `调研-作业检查-竞品与论文-2026-09-24.md` | SmartMusic / MatchMySound 等竞品 + 12 篇论文 |
+| `记忆同步-2026-09-29-收工状态.md` | **新窗口先读这份**：现状、怎么跑、还没做的、要你拍板的三件事 |
 
 要改口径：重跑 `tools/ask.py` 重答那一题，**不要直接改铁律文件**。
 
 ## 目录
 
 ```
-homework/    服务端与算法（align / grade / run_assignment / server / 两个 Node 引擎桥）
+homework/    服务端与算法（reference / align / grade / run_assignment / server / 两个 Node 引擎桥）
 web/         前端（index.html / style.css / app.js）
 tools/       口径问答、对齐探针、合成回归、前端截图自检
 data/        音频库与批改中间产物（不进 git）

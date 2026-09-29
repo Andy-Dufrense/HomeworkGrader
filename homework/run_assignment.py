@@ -11,9 +11,12 @@ Python 只做编排（铁律 Q15 / Q29）；起音与判定都在 Node 侧的 en
 
 用法：
     E:\\Python\\python.exe -X utf8 homework\\run_assignment.py ^
-        --ref   E:\\GuitarFollowLab\\frontend\\data\\chord_arp.json ^
+        --ref   C:\\Users\\Administrator\\vc_gf\\tl-6415.json ^
         --audio E:\\GuitarFollowLab\\sound_data\\f32\\6415\\6415慢速.f32 ^
-        --job   1645 --band 75,450
+        --job   6415 --engine follow --ref-slice 1:32
+
+    --ref-slice A:B   把参考裁到"这次作业那一段"（1 起、含两端，A/B 可留空）
+    --ref-bars  A:B   同上，按小节裁（只有 .gp 生成的时间轴才有 measure 字段）
 """
 
 import argparse
@@ -31,6 +34,7 @@ if HERE not in sys.path:
 
 from align import align, align_by_time, load_score, note_name   # noqa: E402
 from grade import aggregate, describe                          # noqa: E402
+from reference import build_timeline, crop_notes, write_ref    # noqa: E402
 
 JOBS = os.path.join(ROOT, "data", "jobs")
 
@@ -69,6 +73,73 @@ def run_follow_harness(ref_path, audio_path):
     if not line:
         raise RuntimeError("跟弹链路没吐出 RESULT 行：\n%s" % p.stdout[-2000:])
     return json.loads(line), p.stdout
+
+
+def issues_from_log(log, score):
+    """用**跟弹导出记录**（RESULT 里的 log）定位错音 —— 不再猜"第几小节第几拍"。
+
+    记录里每一行是一次判定：`no` = 谱面第几个音（1 起）、`t` = 这一下的录音时刻、
+    `exp/expName` = 谱面要的音、`cand` = 判定挑成的音、`result` = ok/bad。
+
+    一次起音会被反复重判（页面上那个"卡在某一格"的老毛病），所以：
+      * 判定结果按**这个 no 出现过 bad 就算错**（和页面上"错 N 个"同一套口径）；
+      * 报告用的时刻取**第一次判 bad 的那一下**（那才是学员真正弹出来的那一下）。
+    """
+    first_bad = {}
+    ever_bad = set()
+    for row in log or []:
+        try:
+            no = int(row.get("no"))
+        except (TypeError, ValueError):
+            continue
+        if row.get("result") == "bad":
+            ever_bad.add(no)
+            first_bad.setdefault(no, row)
+
+    issues = []
+    for no in sorted(ever_bad):
+        row = first_bad[no]
+        idx = no - 1
+        sn = score[idx] if 0 <= idx < len(score) else None
+        if (sn is not None and sn.get("midi") is not None and row.get("exp") is not None
+                and int(round(float(sn["midi"]))) != int(round(float(row["exp"])))):
+            sn = None            # 对不上号就别硬套小节，宁可不给
+        want = row.get("expName") or (note_name(row["exp"]) if row.get("exp") is not None else None)
+        got = row.get("cand") or row.get("measured")
+        t_audio = row.get("t")
+        measure = beat = None
+        if sn is not None and sn.get("measure") is not None:
+            measure = int(sn["measure"]) + 1
+            beat = int(sn.get("beat") or 0) + 1
+            title = "第 %d 小节 · 第 %d 拍" % (measure, beat)
+        else:
+            title = "本段第 %d 个音" % no
+        t_audio = round(float(t_audio), 2) if t_audio is not None else None
+        t_score = round(float(sn["t"]), 2) if sn is not None else None
+        issues.append({
+            "title": title,
+            "measure": measure, "beat": beat,
+            "note_index": no,
+            "t_audio": t_audio, "t_score": t_score,
+            "kind": "wrong_note",
+            "detail": "这一处要 %s，听着弹成了约 %s。" % (want, got),
+            "fix": "把这一处单独拎出来，慢到一半速度，每个音都按实了再连起来。",
+            "items": [{"want": want, "got": got, "kind": "wrong_note",
+                       "measure": measure, "beat": beat, "note_index": no,
+                       "t_audio": t_audio}],
+        })
+    return issues
+
+
+def judged_slots(log):
+    """逐音记录里一共判过几个**不同的**谱面音（完成度的分母用这个更实在）。"""
+    out = set()
+    for row in log or []:
+        try:
+            out.add(int(row.get("no")))
+        except (TypeError, ValueError):
+            continue
+    return len(out)
 
 
 def issues_from_wrongs(wrongs, score):
@@ -145,49 +216,93 @@ def build(rows, score_notes):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="跑一次完整批改")
-    ap.add_argument("--ref", required=True, help="参考时间轴 JSON（.gp 生成的那份）")
+    ap.add_argument("--ref", default="", help="参考时间轴 JSON（.gp 生成的那份，或借来的练习时间轴）")
+    ap.add_argument("--ref-gp", default="",
+                    help="参考谱面：老师上传的 .gp —— 走 homework/reference.py（Q5/Q6/Q30）")
+    ap.add_argument("--ref-track", type=int, default=None,
+                    help=".gp 取第几轨（默认第一条非打击轨，也就是吉他那条）")
     ap.add_argument("--audio", required=True, help="录音（f32，48k 单声道）")
     ap.add_argument("--job", default="job", help="中间产物目录名，默认 job")
     ap.add_argument("--band", default="75,450", help="读数频带 Hz，如 75,450")
     ap.add_argument("--engine", choices=["follow", "bridge"], default="follow",
                     help="follow=跑跟弹产品页自己的链路（推荐，唯一一份判定代码）；"
                          "bridge=用本仓库自己接的引擎桥（实验用，数字还不可信）")
+    ap.add_argument("--ref-slice", default="",
+                    help="把参考裁到这次作业那一段：\"A:B\"（1 起、含两端，可只写一侧）")
+    ap.add_argument("--ref-bars", default="",
+                    help="同上，按小节裁：\"A:B\"（只有 .gp 生成的时间轴才有 measure 字段）")
     args = ap.parse_args(argv)
 
     jobdir = os.path.join(JOBS, args.job)
     os.makedirs(jobdir, exist_ok=True)
     lo, hi = [float(x) for x in args.band.split(",")]
 
-    meta, score = load_score(args.ref)
-    print("参考谱面 %s：%d 个音，%.2f~%.2f s，音高 %s~%s"
-          % (os.path.basename(args.ref), len(score), score[0]["t"], score[-1]["t"],
-             note_name(min(n["midi"] for n in score)), note_name(max(n["midi"] for n in score))))
+    # 参考谱面：优先用老师上传的 .gp（走跟弹的 gp_timeline.py），其次用现成的时间轴 JSON
+    if args.ref_gp:
+        meta, score_all, _log = build_timeline(args.ref_gp, args.ref_track)
+        ref_src = args.ref_gp
+        label = "老师上传的 .gp"
+    elif args.ref:
+        meta, score_all = load_score(args.ref)
+        ref_src = args.ref
+        label = "现成时间轴"
+    else:
+        ap.error("至少给一个 --ref（现成时间轴）或 --ref-gp（老师上传的 .gp）")
+    if not score_all:
+        raise SystemExit("这份参考里没有音")
+    score, crop_desc = crop_notes(score_all, args.ref_slice, args.ref_bars)
+    ref_path = write_ref(os.path.join(jobdir, "ref.json"), meta, score, crop_desc)
+    print("参考谱面（%s）%s：%d 个音，%.2f~%.2f s，音高 %s~%s"
+          % (label, os.path.basename(ref_src), len(score_all),
+             score_all[0]["t"], score_all[-1]["t"],
+             note_name(min(n["midi"] for n in score_all)),
+             note_name(max(n["midi"] for n in score_all))))
+    if crop_desc:
+        print("作业那一段：%s → %d 个音（已写 %s）"
+              % (crop_desc, len(score), os.path.relpath(ref_path, ROOT)))
 
     # ── 路线 A：跑跟弹产品页自己的链路（推荐） ────────────────────────────
     if args.engine == "follow":
-        res, out = run_follow_harness(args.ref, args.audio)
+        res, out = run_follow_harness(ref_path, args.audio)
         good, bad = int(res.get("good") or 0), int(res.get("bad") or 0)
         missed = int(res.get("missed") or 0)
         unclear = int(res.get("unclear") or 0)
         wrongs = res.get("wrongs") or ""
         print("起音 %d 次 ｜ 对 %d ｜ 错 %d ｜ 漏 %d ｜ 测不准 %d"
               % (res.get("onsets") or 0, good, bad, missed, unclear))
-        issues = issues_from_wrongs(wrongs, score)
+        log = res.get("log") or []
+        # 位置从**跟弹导出记录**里取（哪一下、什么时刻），不再猜"第几小节第几拍"
+        issues = issues_from_log(log, score) if log else issues_from_wrongs(wrongs, score)
+        if log and len(issues) != bad:
+            print("⚠ 逐音记录里挑出 %d 处错音，页面计数 %d —— 报告以逐音记录为准"
+                  % (len(issues), bad))
         sc = score_of(issues, len(score))
-        judged = good + bad
+        judged = judged_slots(log) or (good + bad)
+        # 跟弹页面的"对/错"是**每次判定都算一次**（一格被反复重判时会重复计），
+        # 所以"对+错"可能大于"判过的谱面格数"。这里如实记下来，别让页面上两个数打架。
+        tally_note = ""
+        if judged and (good + bad) != judged:
+            tally_note = ("（跟弹页面的对/错按判定次数计，判过 %d 个谱面音；"
+                          "两者不一致是它那边重判同一格导致的）" % judged)
         result = {
-            "job": args.job, "ref": args.ref, "audio": args.audio,
+            "job": args.job, "ref": ref_src, "audio": args.audio,
+            "ref_used": ref_path, "ref_crop": crop_desc, "ref_notes": len(score),
             "engine": "GuitarFollow 产品页链路（test-follow-real.mjs）",
             "align": {"mode": "跟弹链路自带（按播放位置）", "low_confidence": False,
                       "confidence": None},
             "counts": {"ok": good, "wrong_note": bad, "missing": missed,
                        "unclear": unclear, "extra": 0},
+            "judged_slots": judged,
+            "tally_note": tally_note,
+            "judge_log": log,
             "score": sc,
             "issues": issues,
             "wrongs": wrongs,
-            "score_notes": [{"t": round(n["t"], 3), "string": n.get("string"),
-                             "midi": int(n["midi"])} for n in score],
-            "error_marks": [{"t": it["t_audio"]} for it in issues if it["t_audio"]],
+            "score_notes": [{"idx": i, "t": round(n["t"], 3), "string": n.get("string"),
+                             "midi": int(n["midi"])} for i, n in enumerate(score)],
+            "error_marks": [{"t": it["t_audio"], "idx": (it["note_index"] - 1)
+                             if it.get("note_index") else None}
+                            for it in issues if it["t_audio"]],
         }
         with io.open(os.path.join(jobdir, "result.json"), "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=1)
@@ -195,15 +310,19 @@ def main(argv=None):
         page = {
             "score": sc, "pass_line": 80, "passed": sc >= 80,
             "coverage": int(round(100.0 * judged / max(1, len(score)))),
-            "accuracy": int(round(100.0 * good / max(1, judged))),
+            "accuracy": int(round(100.0 * good / max(1, good + bad))),
             "counts": {"right": good, "wrong": bad, "missing": missed},
             "summary": ("整段节拍是稳的。" if not issues
                         else "有 %d 处音没对上，集中在下面列出的位置。" % len(issues)),
             "issues": [{"title": it["title"], "t_audio": it["t_audio"],
+                        "t_score": it.get("t_score"), "note_index": it.get("note_index"),
+                        "measure": it.get("measure"), "beat": it.get("beat"),
                         "detail": it["detail"], "fix": it["fix"]} for it in issues],
             "score_notes": result["score_notes"],
             "error_marks": result["error_marks"],
-            "note": "数字来自跟弹产品页那条链路（同一份判定代码），用的是真实录音。",
+            "ref_crop": crop_desc, "ref_notes": len(score), "judged_slots": judged,
+            "note": "数字来自跟弹产品页那条链路（同一份判定代码），用的是真实录音。"
+                    + tally_note,
         }
         with io.open(os.path.join(jobdir, "page.json"), "w", encoding="utf-8") as f:
             json.dump(page, f, ensure_ascii=False, indent=1)

@@ -175,7 +175,7 @@ function render(r) {
   el.issues.innerHTML = r.issues.length
     ? r.issues.map(it => `
       <div class="issue">
-        <div class="ih"><span>${it.title}</span><span class="t">第 ${it.t_audio} 秒</span></div>
+        <div class="ih"><span>${it.title}</span><span class="t">${issueTime(it)}</span></div>
         <div class="d">${it.detail}</div>
         <div class="f"><b>怎么改：</b>${it.fix}</div>
       </div>`).join('')
@@ -183,6 +183,14 @@ function render(r) {
   el.demoNote.textContent = r.note;
   drawChart(r);
   el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 一处问题的时间：录音第几秒（判定听到的那一下）+ 谱面第几秒（对得上的那个音）
+function issueTime(it) {
+  const parts = [];
+  if (it.t_audio != null) parts.push('录音 ' + it.t_audio + ' 秒');
+  if (it.t_score != null) parts.push('谱面 ' + it.t_score + ' 秒');
+  return parts.join(' · ') || '—';
 }
 
 // 谱面滚轴图：横轴 = 音频秒数，纵轴 = 第几弦（1 弦在最上面，和琴上一致）
@@ -215,10 +223,12 @@ function drawChart(r) {
   }
   // 谱面音
   const errT = new Set(marks.map(m => (+m.t).toFixed(2)));
+  const errIdx = new Set(marks.filter(m => m.idx != null).map(m => +m.idx));
   notes.forEach(n => {
     const t = +n.t + OFF;
     if (t < T0 || t > T1) return;
-    const bad = errT.has((+n.t).toFixed(2));
+    // 优先按"第几个音"对上（判定记录里给的就是这个）；没有才退回按时刻比
+    const bad = (n.idx != null && errIdx.size) ? errIdx.has(+n.idx) : errT.has((+n.t).toFixed(2));
     const cx = x(t) - 5, cy = y(n.string) - 5;
     parts.push(`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="10" height="10" rx="3" fill="${bad ? '#c0392b' : '#c3ced7'}"/>`);
   });
