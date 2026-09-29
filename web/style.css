@@ -141,12 +141,37 @@ h1{font-size:25px;line-height:1.3;margin:0 0 4px;letter-spacing:-.01em}
 }
 
 /* ── 录制要求 ───────────────────────────────────────────── */
+/* 还没录？去跟练 */
+.cta{
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  background:linear-gradient(180deg,#f2f6ff,#fff);
+  border-color:#d7e1fb;
+}
+.cta-title{font-size:16px;font-weight:600;margin:0 0 4px}
+.cta-sub{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.7;max-width:52ch}
+.cta-btn{
+  margin-left:auto;flex:none;display:inline-block;
+  padding:11px 20px;border-radius:10px;background:var(--brand);color:#fff;
+  font-size:15px;font-weight:600;text-decoration:none;white-space:nowrap;
+}
+.cta-btn:hover{background:var(--brand-800)}
+
 .score-wrap{
-  border:1px solid var(--line);border-radius:10px;background:#fff;
+  position:relative;border:1px solid var(--line);border-radius:10px;background:#fff;
   padding:6px 4px;overflow-x:auto;-webkit-overflow-scrolling:touch;
 }
 #scoreView{min-height:120px}
 #scoreView svg{display:block;margin:0 auto}
+#scoreMarks{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none}
+#scoreMarks .mk{
+  position:absolute;border:2px solid var(--bad);border-radius:4px;
+  background:rgba(180,35,24,.12);
+}
+#scoreMarks .mk b{
+  position:absolute;left:50%;top:-17px;transform:translateX(-50%);
+  font-size:10.5px;font-weight:600;color:#fff;background:var(--bad);
+  border-radius:999px;padding:1px 6px;white-space:nowrap;
+}
 .score-hint{margin:10px 0 0;font-size:12.5px;color:var(--dim);line-height:1.7}
 
 .tips{margin:0;padding-left:20px;font-size:14.5px;color:var(--ink-2)}

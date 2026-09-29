@@ -42,6 +42,8 @@ JOBS = os.path.join(ROOT, "data", "jobs")
 
 # 报告层：只展开前几条"最值得先改"的问题（Q17「有限度」在报告里的体现）
 KEY_ISSUES = 3
+# 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
+PASS_LINE = int(os.environ.get("HOMEWORK_PASS_LINE", "90"))
 # 过程提醒的"明显"门槛（Q9 / Q18 的建议值，用户说改就改）
 TEMPO_TOL = 0.40          # 整体速度差超过 ±40% 才提
 PAUSE_OVER_SEC = 1.0      # 比谱面多停 1 秒以上，且
@@ -527,7 +529,7 @@ def main(argv=None):
         key_groups = groups[:KEY_ISSUES]
         rest_groups = groups[KEY_ISSUES:]
         process = process_notes(res.get("onsets2") or [], score)
-        vtext = verdict_text(sc, 80, key_groups, process, len(issues))
+        vtext = verdict_text(sc, PASS_LINE, key_groups, process, len(issues))
         # 跟弹页面的"对/错"是**每次判定都算一次**（一格被反复重判时会重复计），
         # 所以"对+错"可能大于"判过的谱面格数"。这里如实记下来，别让页面上两个数打架。
         tally_note = ""
@@ -564,7 +566,7 @@ def main(argv=None):
             json.dump(result, f, ensure_ascii=False, indent=1)
         # 页面要的那份（server.py 直接读）
         page = {
-            "score": sc, "pass_line": 80, "passed": sc >= 80,
+            "score": sc, "pass_line": PASS_LINE, "passed": sc >= PASS_LINE,
             "coverage": int(round(100.0 * judged / max(1, len(score)))),
             "accuracy": int(round(100.0 * good / max(1, good + bad))),
             "counts": {"right": good, "wrong": bad, "missing": missed},
@@ -582,6 +584,12 @@ def main(argv=None):
             "more_issues": [{"title": it["title"], "t_audio": it["t_audio"],
                              "t_score": it.get("t_score"),
                              "note_count": len(it["items"])} for it in rest_groups],
+            # 逐个错音（给报告里"谱面上标红"用）：位置、要的音、听到的音
+            "error_notes": [{"t_score": it.get("t_score"), "t_audio": it.get("t_audio"),
+                             "note_index": it.get("note_index"),
+                             "measure": it.get("measure"), "beat": it.get("beat"),
+                             "want": note_pair(it)[0], "got": note_pair(it)[1]}
+                            for it in issues],
             "process": process,
             "score_notes": result["score_notes"],
             "error_marks": result["error_marks"],

@@ -8,12 +8,14 @@ let pollTimer = null;
 let meta = {};              // /api/assignment 回来的作业信息
 let submittedLabel = '';    // 这次交的是什么（文件名 / 直链）
 let currentAid = '';        // 当前选中的作业 id
+let currentStd = {};        // 当前作业的标准（谱面信息）
 let scoreApi = null;        // alphaTab 实例（画谱面用；换作业就销毁重建）
 
 const el = {
   course: $('course'), verTag: $('verTag'),
-  pick: $('pick'),
-  scoreView: $('scoreView'), scoreHint: $('scoreHint'), scoreCard: $('scoreCard'),
+  pick: $('pick'), followLink: $('followLink'),
+  scoreSection: $('scoreSection'), scoreWrap: $('scoreWrap'),
+  scoreView: $('scoreView'), scoreHint: $('scoreHint'), scoreMarks: $('scoreMarks'),
   demoBanner: $('demoBanner'), demoBannerText: $('demoBannerText'),
   steps: $('steps'),
   title: $('title'), subtitle: $('subtitle'), passline: $('passline'),
@@ -94,8 +96,12 @@ function renderFacts(a, std) {
     .join('');
 }
 
-function applyAssignment(a, std, demo, real) {
+function applyAssignment(a, std, demo, real, followUrl) {
   meta = a || {};
+  if (el.followLink) {
+    el.followLink.href = followUrl || '#';
+    el.followLink.hidden = !followUrl;
+  }
   el.course.textContent = a.course || '—';
   el.title.textContent = a.title || '—';
   el.subtitle.textContent = a.artist || '';
@@ -114,15 +120,17 @@ function loadAssignment(id) {
   const q = id ? ('?id=' + encodeURIComponent(id)) : '';
   return fetch(API + '/assignment' + q).then(r => r.json()).then((d) => {
     currentAid = d.id || id || '';
-    applyAssignment(d.assignment, d.standard, d.demo, d.real);
-    renderScore(currentAid, d.standard || {});
+    applyAssignment(d.assignment, d.standard, d.demo, d.real, d.follow_url);
+    currentStd = d.standard || {};
     return d;
   });
 }
 
 // ── 谱面：用 alphaTab 把老师那份 .gp 画出来（跟跟练页同一份库）──────────
-function renderScore(aid, std) {
+function renderScore(std, errors) {
   if (!el.scoreView || !el.scoreHint) return;
+  std = std || {};
+  errors = errors || [];
   if (!window.alphaTab) {
     el.scoreHint.textContent = '谱面库没加载起来（vendor/alphaTab.min.js）。';
     return;
@@ -130,8 +138,9 @@ function renderScore(aid, std) {
   if (scoreApi && scoreApi.destroy) { try { scoreApi.destroy(); } catch (e) { /* ignore */ } }
   scoreApi = null;
   el.scoreView.innerHTML = '';
+  el.scoreMarks.innerHTML = '';
   el.scoreHint.textContent = '正在加载谱面…';
-  const url = API + '/score?id=' + encodeURIComponent(aid || '');
+  const url = API + '/score?id=' + encodeURIComponent(currentAid || '');
   const display = {
     layoutMode: 'page',
     // 注意：这里要用 alphaTab 的**枚举名**（ScoreTab），写成 'score-tab' 会让
@@ -154,13 +163,120 @@ function renderScore(aid, std) {
   api.error.on((e) => {
     el.scoreHint.textContent = '谱面画不出来：' + ((e && (e.message || e)) || e);
   });
+  let beats = [];
+  let segNotes = [];
   api.scoreLoaded.on((s) => {
-    el.scoreHint.textContent = ('谱面：' + (s.title || '—')
+    const seg = segmentBeats(s, std);
+    beats = seg.beats;
+    segNotes = seg.notes;
+    window.__hgBeats = beats;        // 排查用（谱面拍点表）
+    window.__hgSegNotes = segNotes;
+    el.scoreHint.dataset.base = ('谱面：' + (s.title || '—')
       + (s.artist ? ' — ' + s.artist : '')
-      + '（' + s.tracks.length + ' 个声部，全曲 ' + s.masterBars.length + ' 小节，'
-      + (std && std.crop ? '这里显示 ' + std.crop + '，' : '')
-      + Math.round(s.tempo || 0) + ' BPM）');
+      + '（' + s.tracks.length + ' 个声部，全曲 ' + s.masterBars.length + ' 小节'
+      + (std.crop ? '，这里显示 ' + std.crop : '')
+      + '）');
+    el.scoreHint.textContent = el.scoreHint.dataset.base + '；红框就是没对上的那几下。';
   });
+  const paint = () => drawMarks(beats, segNotes, errors);
+  window.__hgErrors = errors;
+  if (api.renderFinished) api.renderFinished.on(paint);
+  setTimeout(paint, 900);
+}
+
+// 这一段谱面里的所有拍 + 所有"要弹的音"（顺序跟参考时间轴对齐）
+//
+// 为什么除了拍还要单独列一遍音：参考时间轴（gp_timeline.py）会把延音并进上一个音、
+// 跳过休止和装饰音；alphaTab 的模型里延音是单独一拍。两边"第几个音"才对得齐，
+// 拿时间对会因为这份 .gp 开头那个 1/4 小节（前奏弱起）两边解释不一样而错位。
+function segmentBeats(score, std) {
+  const idx = (std.track_index == null) ? 0 : std.track_index;
+  const track = (score.tracks && (score.tracks[idx] || score.tracks[0]));
+  const staff = track && track.staves && track.staves[0];
+  if (!staff) return { beats: [], notes: [] };
+  const tps = 60 / (score.tempo || 80) / 960;     // 秒 / tick
+  const beats = [], notes = [];
+  const from = (std.crop && std.bar_from) ? std.bar_from : 1;
+  const to = (std.crop && std.bar_to) ? std.bar_to : staff.bars.length;
+  for (let i = from - 1; i < to && i < staff.bars.length; i++) {
+    const bar = staff.bars[i];
+    for (const voice of bar.voices) {
+      for (const beat of voice.beats) {
+        const t = (beat.absolutePlaybackStart || 0) * tps;
+        beats.push({ beat: beat, t: t });
+        for (const note of (beat.notes || [])) {
+          if (note.isTieDestination) continue;     // 延音不是"再弹一下"
+          notes.push({ note: note, beat: beat, t: t });
+        }
+      }
+    }
+  }
+  return { beats: beats, notes: notes };
+}
+
+// 在谱面上把错音框出来（alphaTab 1.8 没有高亮 API，用它的布局坐标自己画）
+function drawMarks(beats, segNotes, errors) {
+  if (!el.scoreMarks || !scoreApi || !scoreApi.renderer) return;
+  const lookup = scoreApi.renderer.boundsLookup;
+  if (!lookup || !lookup.findBeat || !beats.length) return;
+  el.scoreMarks.innerHTML = '';
+  const off = markOffset();
+  const used = new Set();
+  // 首选"第几个音"直接对上（segmentBeats 已经把延音/休止对齐过了）；
+  // 对不上再退回按时间就近挑一个还没被用过的拍。
+  // 音数跟作业档案里的一致，才敢按"第几个音"直接对
+  const byIndex = segNotes.length > 0
+    && (!stdNoteCount() || segNotes.length === stdNoteCount());
+  (errors || []).forEach((e) => {
+    if (e.t_score == null) return;
+    let target = null;
+    if (byIndex && e.note_index && segNotes[e.note_index - 1]) {
+      target = segNotes[e.note_index - 1];
+    }
+    if (!target) {
+      let bd = 1e9;
+      for (const b of beats) {
+        if (used.has(b)) continue;
+        const d = Math.abs(b.t - e.t_score);
+        if (d < bd) { bd = d; target = b; }
+      }
+      if (target && bd > 0.5) target = null;             // 离得太远就不画（宁缺勿错）
+    }
+    if (!target || used.has(target)) return;
+    used.add(target);
+    const bb = lookup.findBeat(target.beat);
+    const vb = bb && (bb.visualBounds || bb.realBounds || bb);
+    if (!vb || vb.w == null) return;
+    const div = document.createElement('div');
+    div.className = 'mk';
+    div.style.left = Math.round(vb.x + off.x) + 'px';
+    div.style.top = Math.round(vb.y + off.y) + 'px';
+    div.style.width = Math.max(9, Math.round(vb.w)) + 'px';
+    div.style.height = Math.max(9, Math.round(vb.h)) + 'px';
+    div.innerHTML = '<b>' + esc(e.want || '') + '<\/b>';
+    el.scoreMarks.appendChild(div);
+  });
+  const n = el.scoreMarks.children.length;
+  if (n && el.scoreHint && el.scoreHint.dataset.base) {
+    el.scoreHint.textContent = el.scoreHint.dataset.base + '；红框 ' + n + ' 处。';
+  }
+}
+
+// 这份作业一共几个音（用来判断"按第几个音对"靠不靠谱）
+function stdNoteCount() {
+  return currentStd && currentStd.notes ? currentStd.notes : 0;
+}
+
+// #scoreMarks 挂在滚动容器上，而 alphaTab 给的是相对它自己容器的坐标 —— 把偏移补上
+function markOffset() {
+  try {
+    const s = el.scoreView.getBoundingClientRect();
+    const w = el.scoreWrap.getBoundingClientRect();
+    return { x: s.left - w.left + el.scoreWrap.scrollLeft,
+             y: s.top - w.top + el.scoreWrap.scrollTop };
+  } catch (e) {
+    return { x: 0, y: 0 };
+  }
 }
 
 // 作业选择器：把 data/assignments 里登记好的作业列出来
@@ -271,6 +387,7 @@ function render(r) {
   if (r.no_audio) {
     show(el.noAudio, true);
     show(el.reportBody, false);
+    show(el.scoreSection, false);
     el.noAudio.textContent = r.note || '这条作业还没有录音样例。';
     el.demoNote.textContent = r.note || '';
     el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -278,6 +395,7 @@ function render(r) {
   }
   show(el.noAudio, false);
   show(el.reportBody, true);
+  show(el.scoreSection, true);
 
   el.score.textContent = r.score;
   el.score.style.color = r.passed ? 'var(--ok)' : 'var(--bad)';
@@ -325,6 +443,8 @@ function render(r) {
   renderMoreIssues(more);
   el.demoNote.textContent = r.note;
   drawChart(r);
+  // 出结果之后才把谱面画出来，并把没对上的地方框红（交作业前不看谱，练去跟练页）
+  renderScore(r.standard || currentStd, r.error_notes || []);
   el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 

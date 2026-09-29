@@ -54,11 +54,13 @@
     <p class="src" id="source">—</p>
   </section>
 
-  <!-- 标准答案：把老师那份谱面画出来 -->
-  <section class="card" id="scoreCard">
-    <h2 class="card-title">标准答案（谱面）</h2>
-    <div class="score-wrap"><div id="scoreView"></div></div>
-    <p class="score-hint" id="scoreHint">正在加载谱面…</p>
+  <!-- 还没录？去跟练（作业=检查成果，练习交给跟练页）-->
+  <section class="card cta" id="followCta">
+    <div>
+      <h2 class="cta-title">还没录好音频？</h2>
+      <p class="cta-sub">对着谱子实时练一遍吧 —— 跟练页会一边弹一边告诉你哪里没对上，练顺了再回来交作业。</p>
+    </div>
+    <a class="cta-btn" id="followLink" href="#" target="_blank" rel="noopener">去跟练 →</a>
   </section>
 
   <!-- 录制要求（铁律 Q28）-->
@@ -138,7 +140,16 @@
     <p class="summary" id="summary">—</p>
     <ul class="process" id="process"></ul>
 
-    <h3 class="sub-title">与标准谱面的对照</h3>
+    <div id="scoreSection">
+      <h3 class="sub-title">对着标准谱面看错在哪</h3>
+      <div class="score-wrap" id="scoreWrap">
+        <div id="scoreView"></div>
+        <div id="scoreMarks"></div>
+      </div>
+      <p class="score-hint" id="scoreHint">—</p>
+    </div>
+
+    <h3 class="sub-title">整段概览</h3>
     <div class="chart-wrap"><svg id="chart" viewBox="0 0 720 170" preserveAspectRatio="none" role="img" aria-label="谱面与错误的对照图"></svg></div>
     <div class="legend">
       <span><i class="sw gray"></i>谱面要求</span>

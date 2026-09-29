@@ -77,6 +77,25 @@ RECORD_TIPS = [
     "弹错了也继续弹完，别停下来重来",
 ]
 
+# 及格线（用户 2026-09-29 定：90 分）
+PASS_LINE = int(os.environ.get("HOMEWORK_PASS_LINE", "90"))
+
+# "去跟练"的地址：本机用 http，手机要用 https（不然麦克风不给）——
+# 和 VirtuCoach 的跟练入口同一条规矩（VIRTUCOACH_FOLLOW_*）。
+FOLLOW_URL = os.environ.get("HOMEWORK_FOLLOW_URL", "")
+FOLLOW_HTTP_PORT = os.environ.get("HOMEWORK_FOLLOW_HTTP_PORT", "1209")
+FOLLOW_HTTPS_PORT = os.environ.get("HOMEWORK_FOLLOW_HTTPS_PORT", "1210")
+
+
+def follow_url_for(host):
+    """按访问本页用的主机名推跟练地址（localhost 走 http，其它走 https）。"""
+    if FOLLOW_URL:
+        return FOLLOW_URL
+    host = (host or "").split(":")[0]
+    if host in ("localhost", "127.0.0.1", ""):
+        return "http://localhost:%s/" % FOLLOW_HTTP_PORT
+    return "https://%s:%s/" % (host, FOLLOW_HTTPS_PORT)
+
 REAL_ASSIGNMENT = {
     "id": JOB,
     "course": "一对一 · 课后作业",
@@ -86,7 +105,7 @@ REAL_ASSIGNMENT = {
     "measures": 12,
     "track": "吉他（单音分解和弦）",
     "source": "标准答案：老师上传的 Guitar Pro 谱面（.gp → 时间轴）",
-    "pass_line": 80,
+    "pass_line": PASS_LINE,
     "record_tips": RECORD_TIPS,
 }
 
@@ -166,7 +185,7 @@ def card_for(aid):
         "course": a.get("course") or "一对一 · 课后作业",
         "title": a.get("title"), "artist": a.get("artist") or "—",
         "bpm": None, "measures": None, "track": "吉他（老师上传的谱面）",
-        "pass_line": 80, "record_tips": RECORD_TIPS,
+        "pass_line": PASS_LINE, "record_tips": RECORD_TIPS,
     }
     card = assignment_from_standard({"standard": a.get("standard") or {}}, base)
     # 作业名以作业档案为准（谱面自己的标题只作参考）
@@ -394,10 +413,12 @@ class Handler(BaseHTTPRequestHandler):
             if card is None:
                 return self._send(200, {"assignment": ASSIGNMENT, "standard": None,
                                         "id": aid, "demo": True, "real": False,
+                                        "follow_url": follow_url_for(self.headers.get("Host")),
                                         "has_report": False})
             a = load_assignment(aid) or {}
             return self._send(200, {"assignment": card, "standard": a.get("standard"),
                                     "id": aid, "note": a.get("note") or "",
+                                    "follow_url": follow_url_for(self.headers.get("Host")),
                                     "demo": False, "has_report": job_page(aid) is not None})
         if path.startswith("/api/task/"):
             tid = path.rsplit("/", 1)[-1]
