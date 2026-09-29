@@ -10,89 +10,106 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-mark" aria-hidden="true">🎸</span>
-    <span class="brand-text">
-      作业检查
-      <em>HomeworkGrader</em>
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round">
+        <rect x="3.4" y="2.6" width="17.2" height="18.8" rx="4.2"/>
+        <path d="M8.4 5.6v12.8M12 5.6v12.8M15.6 5.6v12.8"/>
+        <path d="M5.6 9.4h12.8M5.6 14.6h12.8"/>
+      </svg>
     </span>
+    <span class="brand-text">作业检查<em>HomeworkGrader</em></span>
   </div>
-  <div class="course" id="course">—</div>
+  <div class="topbar-right">
+    <span class="crumb" id="course">—</span>
+    <span class="tag" id="verTag">验证版</span>
+  </div>
 </header>
 
-<div class="banner" id="demoBanner" hidden>
-  <b>这是 demo</b>
-  <span id="demoBannerText">批改引擎还没接上，页面上的数字来自真实素材的实测。</span>
+<div class="notice" id="demoBanner" hidden>
+  <strong>说明</strong>
+  <span id="demoBannerText">—</span>
 </div>
 
 <main>
 
-  <!-- 三步流程 -->
   <ol class="steps" id="steps">
-    <li class="step is-on" data-step="1"><b>1</b><span>交作业</span></li>
-    <li class="step" data-step="2"><b>2</b><span>老师批改</span></li>
-    <li class="step" data-step="3"><b>3</b><span>看结果</span></li>
+    <li class="step is-on" data-step="1"><b>1</b><span>提交作业</span></li>
+    <li class="step" data-step="2"><b>2</b><span>自动批改</span></li>
+    <li class="step" data-step="3"><b>3</b><span>查看报告</span></li>
   </ol>
 
-  <!-- 本节作业 -->
+  <!-- 本次作业 / 标准答案 -->
   <section class="card">
     <div class="assign-head">
       <div>
-        <p class="eyebrow">本节作业</p>
+        <p class="eyebrow">本次作业</p>
         <h1 id="title">—</h1>
         <p class="sub" id="subtitle">—</p>
       </div>
       <span class="pill" id="passline">—</span>
     </div>
-    <dl class="facts">
-      <div><dt>标准答案</dt><dd id="track">—</dd></div>
-      <div><dt>速度</dt><dd id="bpm">—</dd></div>
-      <div><dt>长度</dt><dd id="measures">—</dd></div>
-    </dl>
+    <dl class="facts" id="facts"></dl>
     <p class="src" id="source">—</p>
   </section>
 
   <!-- 录制要求（铁律 Q28）-->
   <section class="card">
-    <h2 class="card-title">录之前看一眼</h2>
+    <h2 class="card-title">录制要求</h2>
     <ul class="tips" id="tips"></ul>
   </section>
 
-  <!-- ① 交作业 -->
+  <!-- ① 提交作业 -->
   <section class="card" id="uploadCard">
-    <h2 class="card-title"><span class="n">①</span>交作业</h2>
+    <h2 class="card-title"><span class="n">①</span>提交作业</h2>
 
     <label class="drop" id="drop">
       <input type="file" id="file" accept="audio/*,video/mp4" hidden>
-      <span class="drop-ico" aria-hidden="true">🎧</span>
-      <span class="drop-main">点这里选录音，或拖进来</span>
-      <span class="drop-sub">mp3 / m4a / wav 都行；交视频也会自动抽音频</span>
+      <span class="drop-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 16V4.6"/><path d="M7.6 9 12 4.6 16.4 9"/>
+          <path d="M4.6 15.4v2.6a2 2 0 0 0 2 2h10.8a2 2 0 0 0 2-2v-2.6"/>
+        </svg>
+      </span>
+      <span class="drop-main">选择录音文件，或拖到此处</span>
+      <span class="drop-sub">支持 mp3 / m4a / wav；交视频会自动抽音频</span>
     </label>
 
     <div class="chosen" id="chosen" hidden>
       <span class="chosen-name" id="chosenName">—</span>
-      <button type="button" class="link-btn" id="clearFile">换一个</button>
+      <button type="button" class="link-btn" id="clearFile">重新选择</button>
     </div>
 
-    <div class="or"><span>或者贴一条音频直链</span></div>
+    <div class="or"><span>或使用音频直链</span></div>
     <label class="field">
       <span class="field-label">音频直链</span>
-      <input type="url" id="url" placeholder="https://…/我的演奏.mp3">
+      <input type="url" id="url" placeholder="https://…/my-practice.mp3">
     </label>
 
     <button class="primary" id="submit" disabled>提交批改</button>
-    <p class="hint" id="submitHint">先选一个文件，或贴一条直链</p>
+    <p class="hint" id="submitHint">请先选择文件，或填写音频直链</p>
   </section>
 
-  <!-- ② 批改中 -->
+  <!-- ② 自动批改 -->
   <section class="card" id="progressCard" hidden>
-    <h2 class="card-title"><span class="n">②</span>老师正在听…</h2>
+    <h2 class="card-title"><span class="n">②</span>自动批改</h2>
     <div class="bar"><i id="bar"></i></div>
     <p class="stage" id="stage" aria-live="polite">—</p>
+    <ol class="pipe" id="pipe">
+      <li>音频检查：只有吉他，还是还有别的乐器</li>
+      <li>起音检测（与老师跟练同一份引擎）</li>
+      <li>与标准谱面对齐</li>
+      <li>逐音判定</li>
+      <li>生成报告</li>
+    </ol>
   </section>
 
-  <!-- ③ 结果 -->
+  <!-- ③ 批改报告 -->
   <section class="card" id="resultCard" hidden>
-    <h2 class="card-title"><span class="n">③</span>结果</h2>
+    <h2 class="card-title"><span class="n">③</span>批改报告</h2>
+
+    <dl class="facts facts-tight" id="reportMeta"></dl>
 
     <div class="score-row">
       <div class="score-box">
@@ -109,16 +126,21 @@
     <div class="counts" id="counts"></div>
     <p class="summary" id="summary">—</p>
 
-    <h3 class="sub-title">对到谱面上是这样</h3>
+    <h3 class="sub-title">与标准谱面的对照</h3>
     <div class="chart-wrap"><svg id="chart" viewBox="0 0 720 170" preserveAspectRatio="none" role="img" aria-label="谱面与错误的对照图"></svg></div>
     <div class="legend">
-      <span><i class="sw gray"></i>谱面应该弹的</span>
-      <span><i class="sw red"></i>没对上</span>
+      <span><i class="sw gray"></i>谱面要求</span>
+      <span><i class="sw red"></i>未对上</span>
       <span><i class="sw line"></i>小节线</span>
     </div>
 
-    <h3 class="sub-title">要改的地方（<span id="issueCount">0</span> 处）</h3>
+    <h3 class="sub-title">需要改进的地方（<span id="issueCount">0</span> 处）</h3>
     <div id="issues"></div>
+
+    <p class="basis">
+      判定依据：把录音与老师上传的谱面逐音对齐后比对，对错按音名判定；
+      起音与判定用的是「老师跟练」同一份引擎代码，不另立一套。
+    </p>
 
     <button class="ghost" id="again">再交一次</button>
   </section>

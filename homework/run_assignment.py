@@ -297,9 +297,10 @@ def main(argv=None):
         # 跟弹页面的"对/错"是**每次判定都算一次**（一格被反复重判时会重复计），
         # 所以"对+错"可能大于"判过的谱面格数"。这里如实记下来，别让页面上两个数打架。
         tally_note = ""
-        if judged and (good + bad) != judged:
-            tally_note = ("（跟弹页面的对/错按判定次数计，判过 %d 个谱面音；"
-                          "两者不一致是它那边重判同一格导致的）" % judged)
+        if judged:
+            tally_note = ("（完成度 = 引擎判读过的谱面音 ÷ 本次作业的音数 = %d/%d；"
+                          "跟弹页面的对/错按「判定次数」计，同一格被反复重判时会重复计，"
+                          "所以「对＋错」不一定等于判读过的格数）" % (judged, len(score)))
         result = {
             "job": args.job, "ref": ref_src, "audio": args.audio,
             "ref_used": ref_path, "ref_crop": crop_desc, "ref_notes": len(score),

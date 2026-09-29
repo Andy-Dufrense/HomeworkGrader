@@ -1,23 +1,25 @@
-// 作业检查 demo 的前端。流程按最终形态写：提交 → 轮询 task → 出结果，
-// 所以等真批改引擎接上时，只换服务端就行，这个文件不用动。
+// 作业检查的前端。流程按最终形态写：提交 → 轮询批改 → 出报告，
+// 所以等真正的批改服务接上时，只换服务端，这个文件不用动。
 
 const $ = (id) => document.getElementById(id);
 const API = '/api';
 let picked = null;          // 选中的文件
 let pollTimer = null;
 let meta = {};              // /api/assignment 回来的作业信息
+let submittedLabel = '';    // 这次交的是什么（文件名 / 直链）
 
 const el = {
-  course: $('course'), demoBanner: $('demoBanner'), demoBannerText: $('demoBannerText'),
+  course: $('course'), verTag: $('verTag'),
+  demoBanner: $('demoBanner'), demoBannerText: $('demoBannerText'),
   steps: $('steps'),
   title: $('title'), subtitle: $('subtitle'), passline: $('passline'),
-  track: $('track'), bpm: $('bpm'), measures: $('measures'), source: $('source'),
-  tips: $('tips'),
+  facts: $('facts'), source: $('source'), tips: $('tips'),
   drop: $('drop'), file: $('file'), chosen: $('chosen'), chosenName: $('chosenName'),
   clearFile: $('clearFile'), url: $('url'),
   submit: $('submit'), submitHint: $('submitHint'),
-  progressCard: $('progressCard'), bar: $('bar'), stage: $('stage'),
-  resultCard: $('resultCard'), score: $('score'), verdict: $('verdict'),
+  progressCard: $('progressCard'), bar: $('bar'), stage: $('stage'), pipe: $('pipe'),
+  resultCard: $('resultCard'), reportMeta: $('reportMeta'),
+  score: $('score'), verdict: $('verdict'),
   coverage: $('coverage'), accuracy: $('accuracy'), counts: $('counts'),
   summary: $('summary'), chart: $('chart'), issues: $('issues'),
   issueCount: $('issueCount'), again: $('again'), demoNote: $('demoNote'),
@@ -25,7 +27,12 @@ const el = {
 
 const STEP_ATTR = ['is-on', 'is-done'];
 
-// 步骤条：1 交作业 → 2 老师批改 → 3 看结果
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// 步骤条：1 提交作业 → 2 自动批改 → 3 查看报告
 function goStep(n) {
   [...el.steps.children].forEach((li) => {
     const i = Number(li.dataset.step);
@@ -35,7 +42,7 @@ function goStep(n) {
   });
 }
 
-// 同时管 class 和 hidden 属性：index.html 里初始是 hidden 属性，
+// 同时管 class 和 hidden：index.html 里初始是 hidden 属性，
 // 而 .card 这类作者样式会盖掉浏览器默认的 [hidden]{display:none}。
 function show(node, on) {
   node.classList.toggle('hidden', !on);
@@ -51,9 +58,7 @@ function fmtSize(n) {
 function refreshSubmit() {
   const ok = !!(picked || el.url.value.trim());
   el.submit.disabled = !ok;
-  el.submitHint.textContent = ok
-    ? (picked ? '就交这个文件' : '就交这条链接')
-    : '先选一个文件，或贴一条直链';
+  el.submitHint.textContent = ok ? '提交后开始自动批改' : '请先选择文件，或填写音频直链';
 }
 
 function setPicked(file) {
@@ -68,26 +73,38 @@ function setPicked(file) {
   refreshSubmit();
 }
 
-// ── 作业信息 ─────────────────────────────────────────────────────────
-fetch(API + '/assignment').then(r => r.json()).then(({ assignment: a, demo, real }) => {
-  meta = a;
-  el.course.textContent = a.course;
-  el.title.textContent = a.title;
-  el.subtitle.textContent = a.artist;
-  el.passline.textContent = '及格线 ' + a.pass_line;
-  el.track.textContent = a.track;
-  el.bpm.textContent = (a.bpm == null ? '—' : a.bpm + ' BPM');
-  el.measures.textContent = (a.measures == null ? '—' : a.measures + ' 小节');
+// ── 作业信息（标准答案）────────────────────────────────────────────
+function renderFacts(a, std) {
+  const rows = [];
+  rows.push(['标准答案', a.track || '—']);
+  rows.push(['速度', a.bpm == null ? '—' : a.bpm + ' BPM']);
+  rows.push(['乐曲长度', a.measures == null ? '—' : a.measures + ' 小节']);
+  if (std && std.notes) rows.push(['本次要弹', std.notes + ' 个音']);
+  if (std && std.bar_from) rows.push(['有音的小节', std.bar_from + '~' + std.bar_to]);
+  if (std && std.crop) rows.push(['取段', std.crop]);
+  el.facts.innerHTML = rows
+    .map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>')
+    .join('');
+}
+
+fetch(API + '/assignment').then(r => r.json()).then(({ assignment: a, demo, real, standard }) => {
+  meta = a || {};
+  const std = standard || {};
+  el.course.textContent = a.course || '—';
+  el.title.textContent = a.title || '—';
+  el.subtitle.textContent = a.artist || '';
+  el.passline.textContent = '及格线 ' + a.pass_line + ' 分';
+  el.verTag.textContent = real ? '验证版 · 真数据' : '验证版';
+  renderFacts(a, std);
   el.source.textContent = a.source || '标准答案用的是老师上传的谱面（.gp），不是某一次录音。';
-  el.tips.innerHTML = a.record_tips.map(t => '<li>' + t + '</li>').join('');
+  el.tips.innerHTML = (a.record_tips || []).map(t => '<li>' + esc(t) + '</li>').join('');
   el.demoBanner.hidden = false;
-  el.demoBanner.classList.toggle('is-real', !demo);
   el.demoBannerText.textContent = demo
-    ? '批改引擎还没接上，页面里的数字来自 2026-09-24 那次真机录音实测。'
-    : '真数据：这条结果是从真实录音跑出来的，判定用的是跟弹那一份引擎代码。';
+    ? '批改引擎还没接上，页面里的数字来自 2026-09-24 的一次真机录音实测。'
+    : '本页数字来自本机真机素材（真实录音）的批改结果；起音与判定用的是「老师跟练」同一份引擎代码。';
 });
 
-// ── 选文件 / 拖拽 ────────────────────────────────────────────────────
+// ── 选文件 / 拖拽 ────────────────────────────────────────────────
 el.drop.addEventListener('click', () => el.file.click());
 el.file.addEventListener('change', () => setPicked(el.file.files[0] || null));
 el.clearFile.addEventListener('click', () => setPicked(null));
@@ -100,7 +117,7 @@ el.clearFile.addEventListener('click', () => setPicked(null));
 el.drop.addEventListener('drop', e => setPicked((e.dataTransfer.files || [])[0] || null));
 el.url.addEventListener('input', refreshSubmit);
 
-// ── 提交 → 轮询 ──────────────────────────────────────────────────────
+// ── 提交 → 轮询 ──────────────────────────────────────────────────
 el.submit.addEventListener('click', async () => {
   el.submit.disabled = true;
   show(el.resultCard, false);
@@ -108,6 +125,7 @@ el.submit.addEventListener('click', async () => {
   goStep(2);
   el.bar.style.width = '0%';
   el.stage.textContent = '上传中…';
+  submittedLabel = picked ? picked.name : el.url.value.trim();
   try {
     let resp;
     if (picked) {
@@ -123,11 +141,18 @@ el.submit.addEventListener('click', async () => {
     const j = await resp.json();
     poll(j.task_id);
   } catch (e) {
-    el.stage.textContent = '没提交上去：' + e.message;
+    el.stage.textContent = '提交失败：' + e.message;
     el.submit.disabled = false;
     goStep(1);
   }
 });
+
+function markPipe(i) {
+  [...el.pipe.children].forEach((li, k) => {
+    li.classList.toggle('is-done', k < i);
+    li.classList.toggle('is-on', k === i);
+  });
+}
 
 function poll(id) {
   clearInterval(pollTimer);
@@ -135,28 +160,42 @@ function poll(id) {
     const t = await (await fetch(API + '/task/' + id)).json();
     el.bar.style.width = (t.progress || 0) + '%';
     el.stage.textContent = (t.progress || 0) + '% · ' + (t.stage || '处理中…');
+    if (typeof t.stage_index === 'number') markPipe(t.stage_index);
     if (t.status === 'completed') {
       clearInterval(pollTimer);
       show(el.progressCard, false);
       render(t.result);
     } else if (t.status === 'failed') {
       clearInterval(pollTimer);
-      el.stage.textContent = '批改没成功：' + (t.stage || '未知原因');
+      el.stage.textContent = '批改失败：' + (t.stage || '未知原因');
       el.submit.disabled = false;
       goStep(1);
     }
   }, 400);
 }
 
-// ── 出结果 ───────────────────────────────────────────────────────────
+// ── 出报告 ───────────────────────────────────────────────────────
 function render(r) {
   show(el.resultCard, true);
   goStep(3);
+  const a = r.assignment || meta;
+  const std = r.standard || {};
+
+  const metaRows = [
+    ['作业', a.title || '—'],
+    ['标准答案', a.track || '—'],
+    ['本次要弹', std.notes ? std.notes + ' 个音' : '—'],
+    ['提交内容', submittedLabel || '本机真机素材'],
+  ];
+  el.reportMeta.innerHTML = metaRows
+    .map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>')
+    .join('');
+
   el.score.textContent = r.score;
   el.score.style.color = r.passed ? 'var(--ok)' : 'var(--bad)';
   el.verdict.textContent = r.passed
     ? '通过（及格线 ' + r.pass_line + ' 分）'
-    : '这次还没过（及格线 ' + r.pass_line + ' 分），照着下面的地方再来一遍';
+    : '未通过（及格线 ' + r.pass_line + ' 分），按下面几处再练一遍';
   el.verdict.className = 'verdict ' + (r.passed ? 'ok' : 'no');
   el.coverage.textContent = r.coverage + '%';
   el.accuracy.textContent = r.accuracy + '%';
@@ -175,11 +214,11 @@ function render(r) {
   el.issues.innerHTML = r.issues.length
     ? r.issues.map(it => `
       <div class="issue">
-        <div class="ih"><span>${it.title}</span><span class="t">${issueTime(it)}</span></div>
-        <div class="d">${it.detail}</div>
-        <div class="f"><b>怎么改：</b>${it.fix}</div>
+        <div class="ih"><span>${esc(it.title)}</span><span class="t">${esc(issueTime(it))}</span></div>
+        <div class="d">${esc(it.detail)}</div>
+        <div class="f"><b>怎么改：</b>${esc(it.fix)}</div>
       </div>`).join('')
-    : '<p class="stage">这一段没挑出明显问题。</p>';
+    : '<p class="stage">这一段没有挑出明显问题。</p>';
   el.demoNote.textContent = r.note;
   drawChart(r);
   el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -197,7 +236,6 @@ function issueTime(it) {
 function drawChart(r) {
   const notes = r.score_notes || [];
   const marks = r.error_marks || [];
-  // 整体位移：真实批改结果会给 align.offset；没有就用 demo 那次的 2.5s
   const OFF = (r.offset == null) ? 2.5 : Number(r.offset);
   const lastT = notes.length ? (+notes[notes.length - 1].t + OFF) : 30;
   const T0 = OFF, T1 = Math.max(OFF + 4, Math.min(60, Math.ceil(lastT)));
@@ -205,7 +243,6 @@ function drawChart(r) {
   const x = (t) => padL + (t - T0) / (T1 - T0) * (W - padL - padR);
   const y = (s) => padT + (s - 1) / 5 * (H - padT - padB);
   const parts = [];
-  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
   // 六条弦 + 弦号
   for (let s = 1; s <= 6; s++) {
@@ -218,7 +255,7 @@ function drawChart(r) {
   for (let t = 0; t + OFF <= T1; t += bar) {
     const xx = x(t + OFF);
     if (xx < padL) continue;
-    parts.push(`<line x1="${xx.toFixed(1)}" y1="${padT}" x2="${xx.toFixed(1)}" y2="${H - padB}" stroke="#9fd0de" stroke-width="1" stroke-dasharray="3 3"/>`);
+    parts.push(`<line x1="${xx.toFixed(1)}" y1="${padT}" x2="${xx.toFixed(1)}" y2="${H - padB}" stroke="#bcd2ee" stroke-width="1" stroke-dasharray="3 3"/>`);
     parts.push(`<text x="${(xx + 3).toFixed(1)}" y="${H - 8}" font-size="9" fill="#9aa8b8">${Math.round(t / bar) + 1}</text>`);
   }
   // 谱面音
@@ -230,15 +267,15 @@ function drawChart(r) {
     // 优先按"第几个音"对上（判定记录里给的就是这个）；没有才退回按时刻比
     const bad = (n.idx != null && errIdx.size) ? errIdx.has(+n.idx) : errT.has((+n.t).toFixed(2));
     const cx = x(t) - 5, cy = y(n.string) - 5;
-    parts.push(`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="10" height="10" rx="3" fill="${bad ? '#c0392b' : '#c3ced7'}"/>`);
+    parts.push(`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="10" height="10" rx="3" fill="${bad ? '#b42318' : '#c3ced7'}"/>`);
   });
   // 时间轴
   [5, 10, 15, 20, 25].forEach(t => {
     parts.push(`<text x="${x(t).toFixed(1)}" y="${H - 8}" font-size="9" fill="#9aa8b8" text-anchor="middle">${t}s</text>`);
   });
   el.chart.innerHTML = parts.join('');
-  el.chart.setAttribute('aria-label', esc(
-    `谱面共 ${notes.length} 个音，其中 ${marks.length} 个没对上。`));
+  el.chart.setAttribute('aria-label',
+    `谱面共 ${notes.length} 个音，其中 ${marks.length} 个未对上。`);
 }
 
 el.again.addEventListener('click', () => {
@@ -246,6 +283,7 @@ el.again.addEventListener('click', () => {
   show(el.progressCard, false);
   setPicked(null);
   el.url.value = '';
+  submittedLabel = '';
   goStep(1);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });

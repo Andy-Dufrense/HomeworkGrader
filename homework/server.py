@@ -104,7 +104,14 @@ def assignment_from_standard(page):
         a["track"] = "吉他轨 [%s]" % std["track_index"]
     else:
         a["track"] = "吉他（老师上传的谱面）"
-    bits = ["标准答案：老师上传的 Guitar Pro 谱面（.gp → 时间轴）"]
+    kind = std.get("source_kind") or ""
+    if kind == "老师上传的 .gp":
+        head = "标准答案：老师上传的 Guitar Pro 谱面（.gp → 时间轴）"
+    elif kind:
+        head = "标准答案：%s（不是 .gp，只是随手借的练习素材）" % kind
+    else:
+        head = "标准答案：老师上传的 Guitar Pro 谱面（.gp → 时间轴）"
+    bits = [head]
     if std.get("notes"):
         bits.append("这次要弹 %d 个音" % std["notes"])
     if std.get("bar_from") and std.get("bar_to"):
@@ -251,10 +258,11 @@ def run_task(task_id):
     total = sum(s[0] for s in STAGES)
     waited = 0.0
     try:
-        for dur, text in STAGES:
+        for idx, (dur, text) in enumerate(STAGES):
             time.sleep(dur)
             waited += dur
-            TASKS[task_id].update({"stage": text, "progress": int(waited / total * 100)})
+            TASKS[task_id].update({"stage": text, "stage_index": idx,
+                                   "progress": int(waited / total * 100)})
         TASKS[task_id].update({"status": "completed", "progress": 100,
                                "stage": "批改完成", "result": build_result()})
     except Exception as e:                                   # 别把线程搞死
@@ -283,6 +291,7 @@ class Handler(BaseHTTPRequestHandler):
             real = load_real()
             if real is not None:
                 return self._send(200, {"assignment": real["assignment"],
+                                        "standard": real.get("standard"),
                                         "demo": False, "real": True})
             return self._send(200, {"assignment": ASSIGNMENT, "demo": True, "real": False})
         if path.startswith("/api/task/"):
@@ -318,17 +327,30 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    meta, notes = load_score()
     print("=" * 66)
-    print("  HomeworkGrader · 作业检查 demo")
+    print("  HomeworkGrader · 作业检查")
     print("=" * 66)
-    print("  作业     %s — %s（%g BPM，%d 小节）"
-          % (ASSIGNMENT["title"], ASSIGNMENT["artist"],
-             ASSIGNMENT["bpm"], ASSIGNMENT["measures"]))
-    print("  标准答案 %s" % SCORE_TIMELINE)
-    print("           轨 %s，%d 个音，%.2f~%.2f s"
-          % ((meta.get("track") or {}).get("name", "?"), len(notes),
-             notes[0]["t"], notes[-1]["t"]))
+    real = load_real()
+    if real is not None:
+        a = real["assignment"]
+        std = real.get("standard") or {}
+        print("  作业     %s — %s（%s BPM，%s 小节）"
+              % (a["title"], a.get("artist") or "—", a.get("bpm"), a.get("measures")))
+        print("  标准答案 %s" % (std.get("source") or SCORE_TIMELINE))
+        print("           %s ｜ 本次要弹 %s 个音"
+              % (a.get("track") or "—", std.get("notes") or "?"))
+        print("  批改结果 %s（%s 分 ｜ 及格线 %s）"
+              % (os.path.relpath(REAL_PAGE, ROOT), real.get("score"), real.get("pass_line")))
+    else:
+        meta, notes = load_score()
+        print("  作业     %s — %s（%g BPM，%d 小节）"
+              % (ASSIGNMENT["title"], ASSIGNMENT["artist"],
+                 ASSIGNMENT["bpm"], ASSIGNMENT["measures"]))
+        print("  标准答案 %s" % SCORE_TIMELINE)
+        print("           轨 %s，%d 个音，%.2f~%.2f s"
+              % ((meta.get("track") or {}).get("name", "?"), len(notes),
+                 notes[0]["t"], notes[-1]["t"]))
+        print("           （还没有 data\\jobs\\%s\\page.json，页面用样例数字）" % JOB)
     print("  打开     http://localhost:%d" % PORT)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 

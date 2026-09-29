@@ -67,6 +67,19 @@ def main():
         checks.append(("结果页：没横向溢出",
                        page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")))
 
+        # 汇报用：桌面/投屏宽度再来一张（只出图，不加断言）
+        desk = browser.new_page(viewport={"width": 1280, "height": 900})
+        desk.goto(URL, wait_until="load", timeout=20000)
+        desk.wait_for_timeout(400)
+        desk.fill("#url", "https://example.com/demo.mp3")
+        desk.click("#submit")
+        desk.wait_for_selector("#resultCard:not(.hidden)", timeout=20000)
+        desk.wait_for_timeout(500)
+        third = os.path.join(OUT, "hg_shot_desktop.png")
+        desk.screenshot(path=third, full_page=True)
+        print("报告（投屏）->", third)
+        desk.close()
+
         browser.close()
 
     failed = [c for c in checks if not c[1]]
