@@ -248,12 +248,14 @@ function drawMarks(beats, segNotes, errors) {
     const vb = bb && (bb.visualBounds || bb.realBounds || bb);
     if (!vb || vb.w == null) return;
     const div = document.createElement('div');
-    div.className = 'mk';
+    div.className = 'mk mk-' + esc(e.kind || 'wrong_note');
     div.style.left = Math.round(vb.x + off.x) + 'px';
     div.style.top = Math.round(vb.y + off.y) + 'px';
     div.style.width = Math.max(9, Math.round(vb.w)) + 'px';
     div.style.height = Math.max(9, Math.round(vb.h)) + 'px';
-    div.innerHTML = '<b>' + esc(e.want || '') + '<\/b>';
+    // 标记上写清"是什么错"：漏 / 错 / 节奏（用户 2026-09-29：别让我再回头猜）
+    div.innerHTML = '<b>' + esc(KIND_LABEL[e.kind] || '错')
+      + (e.kind === 'timing' || !e.want ? '' : ' ' + esc(e.want)) + '<\/b>';
     el.scoreMarks.appendChild(div);
   });
   const n = el.scoreMarks.children.length;
@@ -429,9 +431,9 @@ function render(r) {
   const more = r.more_issues || [];
   const card = (it) => `
       <div class="issue">
-        <div class="ih"><span>${esc(it.title)}</span><span class="t">${esc(issueTime(it))}</span></div>
+        <div class="ih">${kindBadge(it.kind)}<span>${esc(it.title)}</span>
+          <span class="t">${esc(issueTime(it))}</span></div>
         <div class="d">${esc(it.detail)}</div>
-        <div class="f"><b>怎么改：</b>${esc(it.fix)}</div>
       </div>`;
   el.issues.innerHTML = key.length
     ? key.map(card).join('')
@@ -439,7 +441,7 @@ function render(r) {
   el.foldSummary.textContent = r.passed
     ? '这次的小问题（' + key.length + ' 处，不拦你过）'
     : '先改这几处（' + key.length + ' 处）';
-  el.issueFold.open = !r.passed;
+  el.issueFold.open = true;      // 一律默认展开：用户要的是"老师指着谱子告诉我哪错了"
   el.moreCount.textContent = more.length;
   renderMoreIssues(more);
   el.demoNote.textContent = r.note;
@@ -463,6 +465,13 @@ function issueTime(it) {
   if (it.t_audio != null) parts.push('录音 ' + it.t_audio + ' 秒');
   if (it.t_score != null) parts.push('谱面 ' + it.t_score + ' 秒');
   return parts.join(' · ') || '—';
+}
+
+// 错误类型徽章：让报告一眼看出"是漏了、还是弹错了、还是节奏没对上"
+const KIND_LABEL = { missing: '漏', wrong_note: '错', extra: '多弹', timing: '节奏' };
+function kindBadge(kind) {
+  if (!kind || !KIND_LABEL[kind]) return '';
+  return '<i class="badge k-' + esc(kind) + '">' + esc(KIND_LABEL[kind]) + '</i>';
 }
 
 refreshSubmit();

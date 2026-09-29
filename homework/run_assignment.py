@@ -45,7 +45,9 @@ KEY_ISSUES = 3
 # 作业批改自己的配对（对齐）参数 —— 见 pair_pipeline()
 PAIR_RANK_WIN = 12          # 候选：按"第几个音"的窗口（容忍整体位移）
 PAIR_TIME_WIN = 2.0         # 候选：按时间就近（秒）
-PAIR_MATCH_WIN = 0.5        # 单调 DP 里允许的时间残差（秒）
+PAIR_MATCH_WIN = 0.8        # 单调 DP 里允许的时间残差（秒）
+#   0.5 会把"学员局部慢了一下"的音错判成漏（Hey Jude 上实测：漏 3 → 真漏只有 2）；
+#   1.2 又太宽，会把真的漏弹硬配到隔壁起音上（真漏从 2 变 1）。0.8 刚好。
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
 PASS_LINE = int(os.environ.get("HOMEWORK_PASS_LINE", "90"))
 # 过程提醒的"明显"门槛（Q9 / Q18 的建议值，用户说改就改）
@@ -299,7 +301,7 @@ def rank_groups(groups):
     return sorted(groups, key=weight, reverse=True)
 
 
-def process_notes(onsets, score):
+def process_notes(onsets, score, pauses=None):
     """过程提醒：整体快慢、明显停顿、一会儿快一会儿慢。
 
     数据只用**跟弹自己检出的起音表**（onsets）和谱面的时间，不另做判定；
@@ -311,9 +313,11 @@ def process_notes(onsets, score):
     st = sorted(float(n["t"]) for n in score if n.get("t") is not None)
     if len(ts) < 6 or len(st) < 3:
         return []
-    gaps_a = [b - a for a, b in zip(ts, ts[1:]) if b - a > 0.01]
     gaps_s = [b - a for a, b in zip(st, st[1:]) if b - a > 0.01]
-    if not gaps_a or not gaps_s:
+    if len(ts) < 2 or not gaps_s:
+        return []
+    gaps_a = [b - a for a, b in zip(ts, ts[1:]) if b - a > 0.01]
+    if not gaps_a:
         return []
     med_a, med_s = statistics.median(gaps_a), statistics.median(gaps_s)
     out = []
@@ -329,12 +333,9 @@ def process_notes(onsets, score):
                        % round((1 - ratio) * 100))
 
     # ② 明显停顿（Q20：中途停下不算合格，这里只提醒）
-    worst = None
-    for a, b in zip(ts, ts[1:]):
-        gap = b - a
-        if gap > med_s * PAUSE_RATIO and gap - med_s > PAUSE_OVER_SEC:
-            if worst is None or gap > worst[1]:
-                worst = (a, gap)
+    if pauses is None:                     # 没有配对信息时退回"跟全体间隔中位数比"
+        pauses = find_pauses(ts, med_s)
+    worst = max(pauses, key=lambda p: p[1]) if pauses else None
     if worst:
         out.append("录音 %.1f 秒那里停了一下（约 %.1f 秒），弹错了也接着弹完更稳。"
                    % (worst[0], worst[1]))
@@ -355,6 +356,17 @@ def process_notes(onsets, score):
     if not out:
         out.append("整段速度和节奏是稳的，没听出明显停顿。")
     return out[:3]
+
+
+def find_pauses(ts, med_score_gap):
+    """明显停顿：相邻起音的间隔比谱面间隔大很多（Q20 的"停下重来"就是这种）。"""
+    out = []
+    for a, b in zip(ts, ts[1:]):
+        gap = b - a
+        if med_score_gap > 0.01 and gap > med_score_gap * PAUSE_RATIO \
+                and gap - med_score_gap > PAUSE_OVER_SEC:
+            out.append((a, gap))
+    return out
 
 
 def verdict_text(score, pass_line, key_groups, process, total_issues):
@@ -529,6 +541,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
         jd_of[(i, j)] = jd
     beats = beat_index_map(score, None)
     rows = []
+    weak = 0        # 判定没过、但引擎自己量到的音名就是谱面那个音（见下）
     for j, sn in enumerate(score):
         base = {"score_idx": j, "t_score": sn["t"], "want": note_name(sn["midi"]),
                 "string": sn.get("string"), "fret": sn.get("fret"),
@@ -539,6 +552,16 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
         i = match[j]
         jd = jd_of[(i, j)]
         base["t_audio"] = events[i]["t"]
+        want = note_name(sn["midi"])
+        # 收下"判定没通过、但引擎的读数就是谱面这个音"的情况（2026-09-29）：
+        #   用户定的 Q13 是"检测到的音名 == 谱面音名就算过"，而这正是引擎自己的读数；
+        #   判定没过多半是"这一下不够实/上一个音还在响"（实测 1/38：Hey Jude 第 5 个音
+        #   heard=C4 但 fit 221、margin 1.007，卡在候选判据上）。
+        #   这类**算过**，但会在过程提醒里说明白，不让它变成一个看不见的宽容。
+        if (not jd["pass"]) and jd.get("heardName") == want:
+            weak += 1
+            rows.append(dict(base, kind="ok", got=want, weak=True))
+            continue
         rows.append(dict(base, kind="ok" if jd["pass"] else "wrong_note",
                          got=jd.get("heardName")))
     for i in sorted(extra):
@@ -547,8 +570,23 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
     info = {"mode": "作业批改自己的配对（引擎判定）", "offset": offset, "scale": scale,
             "onsets": len(events), "matched": len(match), "extra": len(extra),
             "hit_window": hits, "candidates": len(pairs), "onsets_list": events,
+            "weak_confirmed": weak,
             "repeat": check_repeat(events, extra, score, scale, offset,
                                    audio, jobdir, band)}
+    # 明显停顿：相邻两个"配上的"音，学员这边的间隔比**谱面这一处该有的间隔**长很多。
+    # ⚠ 不能拿"全体间隔中位数"当参照 —— 谱面里本来就有长音符（Hey Jude 有 1.58 秒的长音），
+    #   那样会把长音全报成停顿（第一版就是这么错的）。
+    marks = []
+    ordered = sorted(match.items(), key=lambda kv: kv[1])       # [(谱面 j, 起音 i)] 按时间
+    for (j1, i1), (j2, i2) in zip(ordered, ordered[1:]):
+        exp = (score[j2]["t"] - score[j1]["t"]) * scale
+        got = events[i2]["t"] - events[i1]["t"]
+        if exp > 0.05 and got > exp * PAUSE_RATIO and got - exp > PAUSE_OVER_SEC:
+            marks.append({"kind": "timing", "note_index": j2 + 1,
+                          "t_audio": round(events[i2]["t"], 2),
+                          "t_score": round(float(score[j2]["t"]), 2),
+                          "seconds": round(got - exp, 2)})
+    info["timing_marks"] = marks
     return rows, info
 
 
@@ -790,7 +828,13 @@ def main(argv=None):
         groups = rank_groups(group_issues(issues))
         key_groups = groups[:KEY_ISSUES]
         rest_groups = groups[KEY_ISSUES:]
-        process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])], score)
+        pauses = [(m["t_audio"], m["seconds"]) for m in pinfo.get("timing_marks", [])]
+        process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])],
+                                score, pauses=pauses)
+        if pinfo.get("weak_confirmed"):
+            process.insert(0, "有 %d 处引擎自己量到的音名就是谱面那个音、只是判定证据偏弱"
+                              "（多半是前一个音还在响）—— 这几处按「音名一致」算过。"
+                           % pinfo["weak_confirmed"])
         if rep.get("repeat"):
             process.insert(0, "你把作业弹了两遍：第二遍有 %d/%d 个音也对上了。"
                               "作业只需要一遍，多出来的第二遍没算进分数。"
@@ -835,21 +879,26 @@ def main(argv=None):
                        "missing": counts["missing"], "extra": counts["extra"]},
             "summary": vtext, "verdict_text": vtext,
             "issues": [{"title": g["title"], "t_audio": g["t_audio"],
-                        "t_score": g.get("t_score"), "detail": g["detail"],
+                        "t_score": g.get("t_score"), "kind": g["items"][0].get("kind"),
+                        "detail": g["detail"],
                         "fix": g["fix"]} for g in groups],
             "key_issues": [{"title": g["title"], "t_audio": g["t_audio"],
                             "t_score": g.get("t_score"), "note_index": g.get("from_note"),
                             "measure": g.get("measure"), "beat": g.get("beat"),
+                            "kind": g["items"][0].get("kind"),
                             "detail": g["detail"], "fix": g["fix"],
                             "note_count": len(g["items"])} for g in key_groups],
             "more_issues": [{"title": g["title"], "t_audio": g["t_audio"],
                              "t_score": g.get("t_score"),
+                             "kind": g["items"][0].get("kind"),
                              "note_count": len(g["items"])} for g in rest_groups],
             "error_notes": [{"t_score": it.get("t_score"), "t_audio": it.get("t_audio"),
                              "note_index": it.get("note_index"),
                              "measure": it.get("measure"), "beat": it.get("beat"),
+                             "kind": it.get("kind"),
                              "want": note_pair(it)[0], "got": note_pair(it)[1]}
-                            for it in issues],
+                            for it in issues]
+                           + [dict(m) for m in pinfo.get("timing_marks") or []],
             "process": process,
             "score_notes": [{"t": round(n["t"], 3), "string": n.get("string"),
                              "midi": int(n["midi"])} for n in score],
