@@ -17,7 +17,7 @@ import os
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -64,6 +64,15 @@ JOB = os.environ.get("HOMEWORK_JOB", "hey-jude-01")
 REAL_PAGE = os.path.join(ROOT, "data", "jobs", JOB, "page.json")
 REAL_RESULT = os.path.join(ROOT, "data", "jobs", JOB, "result.json")
 
+# 作业库：每次作业一个目录（homework/make_assignments.py 生成）
+ASSIGN_DIR = os.path.join(ROOT, "data", "assignments")
+
+RECORD_TIPS = [
+    "戴耳机，别让伴奏被麦克风收进去",
+    "环境安静一点，手机离琴半米左右",
+    "弹错了也继续弹完，别停下来重来",
+]
+
 REAL_ASSIGNMENT = {
     "id": JOB,
     "course": "一对一 · 课后作业",
@@ -74,15 +83,11 @@ REAL_ASSIGNMENT = {
     "track": "吉他（单音分解和弦）",
     "source": "标准答案：老师上传的 Guitar Pro 谱面（.gp → 时间轴）",
     "pass_line": 80,
-    "record_tips": [
-        "戴耳机，别让伴奏被麦克风收进去",
-        "环境安静一点，手机离琴半米左右",
-        "弹错了也继续弹完，别停下来重来",
-    ],
+    "record_tips": RECORD_TIPS,
 }
 
 
-def assignment_from_standard(page):
+def assignment_from_standard(page, base=None):
     """作业卡用**这份参考谱面自己的信息**。
 
     用户口径（2026-09-29）：不管多少轨，目标就是吉他；只要弹得跟谱子上一样就行。
@@ -90,7 +95,7 @@ def assignment_from_standard(page):
     而不是写死一个作业名。
     """
     std = page.get("standard") or {}
-    a = dict(REAL_ASSIGNMENT)                       # 课程/课时这类后台才知道的先用默认
+    a = dict(base or REAL_ASSIGNMENT)               # 课程/课时这类后台才知道的先用默认
     if std.get("title"):
         a["title"] = std["title"]
     if std.get("artist"):
@@ -107,6 +112,8 @@ def assignment_from_standard(page):
     kind = std.get("source_kind") or ""
     if kind == "老师上传的 .gp":
         head = "标准答案：老师上传的 Guitar Pro 谱面（.gp → 时间轴）"
+    elif kind == "本机生成的练习谱":
+        head = "标准答案：本机生成的练习谱（.gp4 → 时间轴）"
     elif kind:
         head = "标准答案：%s（不是 .gp，只是随手借的练习素材）" % kind
     else:
@@ -124,22 +131,94 @@ def assignment_from_standard(page):
     return a
 
 
-def load_real():
-    """读真实批改结果（run_assignment.py 产出的 page.json）。"""
-    if not os.path.exists(REAL_PAGE):
+# ── 作业库（data/assignments/<id>，由 homework/make_assignments.py 生成）──────
+
+def load_assignments():
+    out = []
+    if not os.path.isdir(ASSIGN_DIR):
+        return out
+    for name in sorted(os.listdir(ASSIGN_DIR)):
+        p = os.path.join(ASSIGN_DIR, name, "assignment.json")
+        if os.path.exists(p):
+            with io.open(p, encoding="utf-8") as f:
+                out.append(json.load(f))
+    return out
+
+
+def load_assignment(aid):
+    for a in load_assignments():
+        if a.get("id") == aid:
+            return a
+    return None
+
+
+def card_for(aid):
+    """作业卡：课程/作业名来自作业档案，谱面信息来自它的 standard。"""
+    a = load_assignment(aid)
+    if a is None:
         return None
-    with io.open(REAL_PAGE, encoding="utf-8") as f:
+    base = {
+        "id": aid,
+        "course": a.get("course") or "一对一 · 课后作业",
+        "title": a.get("title"), "artist": a.get("artist") or "—",
+        "bpm": None, "measures": None, "track": "吉他（老师上传的谱面）",
+        "pass_line": 80, "record_tips": RECORD_TIPS,
+    }
+    card = assignment_from_standard({"standard": a.get("standard") or {}}, base)
+    # 作业名以作业档案为准（谱面自己的标题只作参考）
+    card["title"] = a.get("title") or card["title"]
+    card["artist"] = a.get("artist") or card["artist"]
+    card["course"] = a.get("course") or card["course"]
+    card["lesson"] = a.get("lesson") or ""
+    card["note"] = a.get("note") or ""
+    return card
+
+
+def job_page(aid):
+    """这一次批改的结果（run_assignment.py 写出来的 page.json）；没有就 None。"""
+    path = os.path.join(ROOT, "data", "jobs", aid, "page.json")
+    if not os.path.exists(path):
+        return None
+    with io.open(path, encoding="utf-8") as f:
         page = json.load(f)
-    page["assignment"] = assignment_from_standard(page)
+    card = card_for(aid)
+    if card is not None:
+        page["assignment"] = card
+    a = load_assignment(aid)
+    if a is not None:
+        page["standard"] = a.get("standard") or page.get("standard")
     page["real"] = True
-    if os.path.exists(REAL_RESULT):
-        with io.open(REAL_RESULT, encoding="utf-8") as f:
+    rich_path = os.path.join(ROOT, "data", "jobs", aid, "result.json")
+    if os.path.exists(rich_path):
+        with io.open(rich_path, encoding="utf-8") as f:
             rich = json.load(f)
         page["align"] = rich.get("align")
         page["engine"] = rich.get("engine")
         if rich.get("align") and rich["align"].get("offset") is not None:
             page["offset"] = float(rich["align"]["offset"])
     return page
+
+
+def build_result_for(aid):
+    """给页面用的结果：有批改记录就给真报告，没有就说"这条还没收到录音"。"""
+    page = job_page(aid)
+    if page is not None:
+        return page
+    card = card_for(aid)
+    if card is None:
+        return build_sample_result()
+    return {
+        "no_audio": True,
+        "assignment": card,
+        "standard": (load_assignment(aid) or {}).get("standard") or {},
+        "note": "标准答案已经按老师那份 .gp 生成好了；这条作业还没有录音样例，"
+                "等真实录音进来就能批。",
+    }
+
+
+def load_real():
+    """默认那一份（HOMEWORK_JOB）的批改结果；没有就 None。"""
+    return job_page(JOB)
 
 RUN = {"judged": 18, "right": 10, "wrong": 8, "missing": 0,
        "expected_in_excerpt": 24}
@@ -172,11 +251,8 @@ def load_score():
     return d.get("meta", {}), notes
 
 
-def build_result():
-    """把实测数字拼成结果页要的东西（含每条错的定位与改法）。"""
-    real = load_real()
-    if real is not None:
-        return real
+def build_sample_result():
+    """没有任何已登记作业时的兜底：把 9-24 那次实测数字拼成结果页。"""
     meta, notes = load_score()
     by_measure = {}
     for n in notes:
@@ -254,7 +330,7 @@ STAGES = [(0.8, "正在听：只有吉他，还是还有别的（决定要不要
           (0.6, "正在整理报告…")]
 
 
-def run_task(task_id):
+def run_task(task_id, aid):
     total = sum(s[0] for s in STAGES)
     waited = 0.0
     try:
@@ -264,7 +340,7 @@ def run_task(task_id):
             TASKS[task_id].update({"stage": text, "stage_index": idx,
                                    "progress": int(waited / total * 100)})
         TASKS[task_id].update({"status": "completed", "progress": 100,
-                               "stage": "批改完成", "result": build_result()})
+                               "stage": "批改完成", "result": build_result_for(aid)})
     except Exception as e:                                   # 别把线程搞死
         TASKS[task_id].update({"status": "failed", "stage": "批改失败：%s" % e})
 
@@ -286,14 +362,30 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        u = urlparse(self.path)
+        path = u.path
+        aid = (parse_qs(u.query).get("id") or [JOB])[0]
+        if path == "/api/assignments":
+            rows = []
+            for a in load_assignments():
+                std = a.get("standard") or {}
+                rows.append({"id": a["id"], "title": a.get("title"),
+                             "artist": a.get("artist"), "course": a.get("course"),
+                             "lesson": a.get("lesson"), "notes": std.get("notes"),
+                             "track": std.get("track_name") or "—",
+                             "crop": std.get("crop") or "",
+                             "has_report": job_page(a["id"]) is not None})
+            return self._send(200, {"assignments": rows, "current": aid})
         if path == "/api/assignment":
-            real = load_real()
-            if real is not None:
-                return self._send(200, {"assignment": real["assignment"],
-                                        "standard": real.get("standard"),
-                                        "demo": False, "real": True})
-            return self._send(200, {"assignment": ASSIGNMENT, "demo": True, "real": False})
+            card = card_for(aid)
+            if card is None:
+                return self._send(200, {"assignment": ASSIGNMENT, "standard": None,
+                                        "id": aid, "demo": True, "real": False,
+                                        "has_report": False})
+            a = load_assignment(aid) or {}
+            return self._send(200, {"assignment": card, "standard": a.get("standard"),
+                                    "id": aid, "note": a.get("note") or "",
+                                    "demo": False, "has_report": job_page(aid) is not None})
         if path.startswith("/api/task/"):
             tid = path.rsplit("/", 1)[-1]
             t = TASKS.get(tid)
@@ -310,9 +402,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, f.read(), MIME.get(ext, "application/octet-stream"))
 
     def do_POST(self):
-        path = urlparse(self.path).path
+        u = urlparse(self.path)
+        path = u.path
         if path != "/api/submit":
             return self._send(404, {"error": "404"})
+        aid = (parse_qs(u.query).get("id") or [JOB])[0]
+        if load_assignment(aid) is None:
+            aid = JOB
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(n) if n else b""
         # demo：不存文件，只记下「收到多大一坨」
@@ -320,9 +416,9 @@ class Handler(BaseHTTPRequestHandler):
         info = {"bytes": len(raw), "kind": "link" if "json" in ctype else "file"}
         tid = uuid.uuid4().hex[:12]
         TASKS[tid] = {"status": "running", "progress": 0, "stage": "已收到，排队中…",
-                      "submitted": info}
+                      "submitted": info, "assignment": aid}
         import threading
-        threading.Thread(target=run_task, args=(tid,), daemon=True).start()
+        threading.Thread(target=run_task, args=(tid, aid), daemon=True).start()
         return self._send(200, {"task_id": tid, "received": info})
 
 
@@ -330,19 +426,23 @@ def main():
     print("=" * 66)
     print("  HomeworkGrader · 作业检查")
     print("=" * 66)
-    real = load_real()
-    if real is not None:
-        a = real["assignment"]
-        std = real.get("standard") or {}
-        print("  作业     %s — %s（%s BPM，%s 小节）"
-              % (a["title"], a.get("artist") or "—", a.get("bpm"), a.get("measures")))
-        print("  标准答案 %s" % (std.get("source") or SCORE_TIMELINE))
-        print("           %s ｜ 本次要弹 %s 个音"
-              % (a.get("track") or "—", std.get("notes") or "?"))
-        print("  批改结果 %s（%s 分 ｜ 及格线 %s）"
-              % (os.path.relpath(REAL_PAGE, ROOT), real.get("score"), real.get("pass_line")))
+    rows = load_assignments()
+    if rows:
+        print("  作业库   data/assignments 下 %d 份；默认展示 %s" % (len(rows), JOB))
+        for a in rows:
+            std = a.get("standard") or {}
+            print("    %-22s %-30s %4s 个音  %s"
+                  % (a["id"], (a.get("title") or "")[:30], std.get("notes"),
+                     "（已批改）" if job_page(a["id"]) else ""))
+        page = load_real()
+        if page is not None:
+            print("  批改结果 data\\jobs\\%s\\page.json（%s 分 ｜ 及格线 %s）"
+                  % (JOB, page.get("score"), page.get("pass_line")))
+        else:
+            print("  ⚠ data\\jobs\\%s\\ 里还没有 page.json —— 默认那份只显示标准答案" % JOB)
     else:
         meta, notes = load_score()
+        print("  （data/assignments 还是空的，先用样例数字）")
         print("  作业     %s — %s（%g BPM，%d 小节）"
               % (ASSIGNMENT["title"], ASSIGNMENT["artist"],
                  ASSIGNMENT["bpm"], ASSIGNMENT["measures"]))
@@ -350,7 +450,6 @@ def main():
         print("           轨 %s，%d 个音，%.2f~%.2f s"
               % ((meta.get("track") or {}).get("name", "?"), len(notes),
                  notes[0]["t"], notes[-1]["t"]))
-        print("           （还没有 data\\jobs\\%s\\page.json，页面用样例数字）" % JOB)
     print("  打开     http://localhost:%d" % PORT)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 

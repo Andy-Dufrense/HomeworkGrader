@@ -17,6 +17,7 @@ Python 只做编排（铁律 Q15 / Q29）；起音与判定都在 Node 侧的 en
 
     --ref-slice A:B   把参考裁到"这次作业那一段"（1 起、含两端，A/B 可留空）
     --ref-bars  A:B   同上，按小节裁（只有 .gp 生成的时间轴才有 measure 字段）
+    --assignment <id> 直接用 data/assignments/<id> 里登记好的作业当参考（推荐）
 """
 
 import argparse
@@ -217,12 +218,15 @@ def build(rows, score_notes):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="跑一次完整批改")
     ap.add_argument("--ref", default="", help="参考时间轴 JSON（.gp 生成的那份，或借来的练习时间轴）")
+    ap.add_argument("--assignment", default="",
+                    help="用 data/assignments/<id> 里登记好的作业当参考（连作业档案一起带上）")
     ap.add_argument("--ref-gp", default="",
                     help="参考谱面：老师上传的 .gp —— 走 homework/reference.py（Q5/Q6/Q30）")
     ap.add_argument("--ref-track", type=int, default=None,
                     help=".gp 取第几轨（默认第一条非打击轨，也就是吉他那条）")
     ap.add_argument("--audio", required=True, help="录音（f32，48k 单声道）")
-    ap.add_argument("--job", default="job", help="中间产物目录名，默认 job")
+    ap.add_argument("--job", default="",
+                    help="中间产物目录名；默认用作业 id（--assignment 给了的话），否则 job")
     ap.add_argument("--band", default="75,450", help="读数频带 Hz，如 75,450")
     ap.add_argument("--engine", choices=["follow", "bridge"], default="follow",
                     help="follow=跑跟弹产品页自己的链路（推荐，唯一一份判定代码）；"
@@ -232,13 +236,30 @@ def main(argv=None):
     ap.add_argument("--ref-bars", default="",
                     help="同上，按小节裁：\"A:B\"（只有 .gp 生成的时间轴才有 measure 字段）")
     args = ap.parse_args(argv)
+    job = args.job or args.assignment or "job"
 
-    jobdir = os.path.join(JOBS, args.job)
+    jobdir = os.path.join(JOBS, job)
     os.makedirs(jobdir, exist_ok=True)
     lo, hi = [float(x) for x in args.band.split(",")]
 
     # 参考谱面：优先用老师上传的 .gp（走跟弹的 gp_timeline.py），其次用现成的时间轴 JSON
-    if args.ref_gp:
+    if args.assignment:
+        adir = os.path.join(ROOT, "data", "assignments", args.assignment)
+        aj_path = os.path.join(adir, "assignment.json")
+        if not os.path.exists(aj_path):
+            raise SystemExit("没有这份作业：%s\n（先跑 homework\\make_assignments.py gp/progressions 登记）"
+                             % aj_path)
+        with io.open(aj_path, encoding="utf-8") as f:
+            aj = json.load(f)
+        ref_path = os.path.join(adir, "ref.json")
+        meta, score = load_score(ref_path)
+        score_all = score
+        crop_desc = (aj.get("standard") or {}).get("crop") or ""
+        standard = dict(aj.get("standard") or {})
+        standard["source_kind"] = "老师上传的 .gp"
+        label = "已登记作业 %s" % args.assignment
+        ref_src = aj.get("gp") or ref_path
+    elif args.ref_gp:
         meta, score_all, _log = build_timeline(args.ref_gp, args.ref_track)
         ref_src = args.ref_gp
         label = "老师上传的 .gp"
@@ -250,24 +271,24 @@ def main(argv=None):
         ap.error("至少给一个 --ref（现成时间轴）或 --ref-gp（老师上传的 .gp）")
     if not score_all:
         raise SystemExit("这份参考里没有音")
-    score, crop_desc = crop_notes(score_all, args.ref_slice, args.ref_bars)
-    ref_path = write_ref(os.path.join(jobdir, "ref.json"), meta, score, crop_desc)
-    # 这次作业的"标准"是什么 —— 报告和页面都要写清楚（用户口径：以吉他为准、弹得跟谱子一样就行）
-    tr = meta.get("track") or {}
-    measures = meta.get("measures")
-    standard = {
-        "title": meta.get("title"), "artist": meta.get("artist"),
-        "tempo": meta.get("tempo"), "measures": measures,
-        "track_index": meta.get("_track_index"), "track_name": tr.get("name"),
-        "track_tuning": tr.get("tuning"),
-        "track_confident": meta.get("_track_confident"),
-        "track_why": meta.get("_track_why"),
-        "notes": len(score), "notes_all": len(score_all), "crop": crop_desc,
-        "source": ref_src, "source_kind": label,
-    }
-    bars = [int(n["measure"]) + 1 for n in score if n.get("measure") is not None]
-    if bars:
-        standard["bar_from"], standard["bar_to"] = min(bars), max(bars)
+    if not args.assignment:
+        score, crop_desc = crop_notes(score_all, args.ref_slice, args.ref_bars)
+        ref_path = write_ref(os.path.join(jobdir, "ref.json"), meta, score, crop_desc)
+        # 这次作业的"标准"是什么 —— 报告和页面都要写清楚（以吉他为准、弹得跟谱子一样就行）
+        tr = meta.get("track") or {}
+        standard = {
+            "title": meta.get("title"), "artist": meta.get("artist"),
+            "tempo": meta.get("tempo"), "measures": meta.get("measures"),
+            "track_index": meta.get("_track_index"), "track_name": tr.get("name"),
+            "track_tuning": tr.get("tuning"),
+            "track_confident": meta.get("_track_confident"),
+            "track_why": meta.get("_track_why"),
+            "notes": len(score), "notes_all": len(score_all), "crop": crop_desc,
+            "source": ref_src, "source_kind": label,
+        }
+        bars = [int(n["measure"]) + 1 for n in score if n.get("measure") is not None]
+        if bars:
+            standard["bar_from"], standard["bar_to"] = min(bars), max(bars)
     print("参考谱面（%s）%s：%d 个音，%.2f~%.2f s，音高 %s~%s"
           % (label, os.path.basename(ref_src), len(score_all),
              score_all[0]["t"], score_all[-1]["t"],
@@ -302,7 +323,7 @@ def main(argv=None):
                           "跟弹页面的对/错按「判定次数」计，同一格被反复重判时会重复计，"
                           "所以「对＋错」不一定等于判读过的格数）" % (judged, len(score)))
         result = {
-            "job": args.job, "ref": ref_src, "audio": args.audio,
+            "job": job, "ref": ref_src, "audio": args.audio,
             "ref_used": ref_path, "ref_crop": crop_desc, "ref_notes": len(score),
             "standard": standard,
             "engine": "GuitarFollow 产品页链路（test-follow-real.mjs）",

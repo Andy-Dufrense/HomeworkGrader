@@ -53,6 +53,11 @@ button,input{font:inherit}
   letter-spacing:.06em;text-transform:uppercase;
 }
 .topbar-right{display:flex;align-items:center;gap:8px;margin-left:auto;min-width:0}
+.pick{
+  flex:none;max-width:38vw;font-size:13px;color:var(--ink);background:#fbfcfe;
+  border:1px solid var(--line);border-radius:8px;padding:6px 8px;
+}
+.pick:focus{border-color:var(--brand)}
 .crumb{
   color:var(--ink-2);font-size:13px;max-width:44vw;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;
@@ -253,6 +258,10 @@ h1{font-size:25px;line-height:1.3;margin:0 0 4px;letter-spacing:-.01em}
 .basis{
   margin:18px 0 0;padding:12px 14px;border-radius:10px;background:#fbfcfe;
   border:1px solid var(--line-2);font-size:12.5px;color:var(--dim);line-height:1.7;
+}
+.noaudio{
+  padding:14px 16px;border-radius:10px;background:#fbfcfe;border:1px dashed var(--line);
+  font-size:14px;color:var(--ink-2);line-height:1.7;
 }
 .ghost{
   width:100%;min-height:48px;margin-top:16px;border:1px solid var(--line);

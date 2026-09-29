@@ -1,0 +1,36 @@
+{
+ "id": "chinese-jasmine-01",
+ "title": "Moo Li Wha (Jasmine)",
+ "artist": "Chinese Folk Song",
+ "course": "一对一 · 课后作业",
+ "lesson": "Moo Li Wha (Jasmine)",
+ "standard": {
+  "title": "Moo Li Wha (Jasmine)",
+  "artist": "Chinese Folk Song",
+  "tempo": 100.0,
+  "measures": 65,
+  "track_index": 0,
+  "track_name": "Track 1",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "全曲只有一条非打击轨，就是它",
+  "notes": 255,
+  "notes_all": 255,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 65,
+  "source": "E:\\HomeworkGrader\\data\\.gp\\chinese-jasmine.gp4",
+  "source_kind": "老师上传的 .gp"
+ },
+ "gp": "E:\\HomeworkGrader\\data\\.gp\\chinese-jasmine.gp4",
+ "ref": "data/assignments/chinese-jasmine-01/ref.json",
+ "note": "整份谱就是这次作业。",
+ "created": "2026-09-29"
+}

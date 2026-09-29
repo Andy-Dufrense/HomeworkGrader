@@ -42,6 +42,27 @@ E:\Python\python.exe -X utf8 homework\reference.py ^
   --out scores\hey-jude\lesson06\assignment.json
 ```
 
+## 作业库（每份谱 = 一次作业）
+
+```bat
+:: 老师给的 .gp 登记成作业
+E:\Python\python.exe -X utf8 homework\make_assignments.py gp ^
+  --gp queen-we_will_rock_you.gp4 --id we-will-rock-you-01 --title "We will rock you"
+
+:: 生成常见和弦走向的练习谱（真的 .gp4）+ 一起登记
+E:\Python\python.exe -X utf8 homework\make_assignments.py progressions
+
+:: 看现有作业
+E:\Python\python.exe -X utf8 homework\make_assignments.py list
+
+:: 拿登记好的作业直接批一条录音
+E:\Python\python.exe -X utf8 homework\run_assignment.py ^
+  --assignment 6415-T3231323 --audio <录音.f32> --engine follow
+```
+
+产物：`data/assignments/<id>/assignment.json`（作业档案）+ `ref.json`（参考时间轴）；
+生成的练习谱在 `scores/practice/*.gp4`。页面上顶栏右侧的**作业选择器**列的就是这些作业。
+
 链路（铁律 Q15 / Q29）：
 
 ```
@@ -69,6 +90,7 @@ E:\Python\python.exe -X utf8 homework\reference.py ^
 | 引擎接入方式 | ✅ 走跟弹产品页那条链路（自己拼 engine 调用数字对不上，已放弃） |
 | 参考谱面（.gp → 作业那一段，`reference.py`） | ✅ 2026-09-29；Q6 选吉他轨（多轨谱别挑到人声/钢琴）；完成度从 34% 修到 94% |
 | 问题卡定位（小节拍 + 录音秒 + 谱面秒） | ✅ 2026-09-29；定位改用跟弹的逐音导出记录 |
+| 作业库（`make_assignments.py`） | ✅ 2026-09-29；老师给的 3 份 .gp + 5 份常见和弦走向（T3231323）= 8 份作业，页面可切换 |
 | 音轨分离（自动判断）／降噪／节奏网格／报告话术 | 🔜 还没做 |
 
 ## 文档在哪
@@ -90,8 +112,11 @@ E:\Python\python.exe -X utf8 homework\reference.py ^
 homework/    服务端与算法（reference / align / grade / run_assignment / server / 两个 Node 引擎桥）
 web/         前端（index.html / style.css / app.js）
 tools/       口径问答、对齐探针、合成回归、前端截图自检
-data/        音频库与批改中间产物（不进 git）
-scores/      与 GuitarFollow 共用的曲谱库（.gp 不进 git）
+data/        音频库、批改中间产物（不进 git）+ 作业库 data/assignments/（进 git）
+scores/      与 GuitarFollow 共用的曲谱库；老师给的 .gp 不进 git，practice/ 生成的练习谱进 git
 ```
+
+`data/assignments/` 是**作业库**（每次作业一个目录：档案 + 参考时间轴），
+`scores/practice/` 是我们自己生成的练习谱（常见和弦走向），这两处是进 git 的。
 
 `data/` 和 `scores/` 里的东西**都不进 git**（学员隐私 + 谱面版权），见 `.gitignore`。

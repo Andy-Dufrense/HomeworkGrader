@@ -7,9 +7,11 @@ let picked = null;          // 选中的文件
 let pollTimer = null;
 let meta = {};              // /api/assignment 回来的作业信息
 let submittedLabel = '';    // 这次交的是什么（文件名 / 直链）
+let currentAid = '';        // 当前选中的作业 id
 
 const el = {
   course: $('course'), verTag: $('verTag'),
+  pick: $('pick'),
   demoBanner: $('demoBanner'), demoBannerText: $('demoBannerText'),
   steps: $('steps'),
   title: $('title'), subtitle: $('subtitle'), passline: $('passline'),
@@ -19,6 +21,7 @@ const el = {
   submit: $('submit'), submitHint: $('submitHint'),
   progressCard: $('progressCard'), bar: $('bar'), stage: $('stage'), pipe: $('pipe'),
   resultCard: $('resultCard'), reportMeta: $('reportMeta'),
+  noAudio: $('noAudio'), reportBody: $('reportBody'),
   score: $('score'), verdict: $('verdict'),
   coverage: $('coverage'), accuracy: $('accuracy'), counts: $('counts'),
   summary: $('summary'), chart: $('chart'), issues: $('issues'),
@@ -87,22 +90,46 @@ function renderFacts(a, std) {
     .join('');
 }
 
-fetch(API + '/assignment').then(r => r.json()).then(({ assignment: a, demo, real, standard }) => {
+function applyAssignment(a, std, demo, real) {
   meta = a || {};
-  const std = standard || {};
   el.course.textContent = a.course || '—';
   el.title.textContent = a.title || '—';
   el.subtitle.textContent = a.artist || '';
   el.passline.textContent = '及格线 ' + a.pass_line + ' 分';
   el.verTag.textContent = real ? '验证版 · 真数据' : '验证版';
-  renderFacts(a, std);
+  renderFacts(a, std || {});
   el.source.textContent = a.source || '标准答案用的是老师上传的谱面（.gp），不是某一次录音。';
   el.tips.innerHTML = (a.record_tips || []).map(t => '<li>' + esc(t) + '</li>').join('');
   el.demoBanner.hidden = false;
   el.demoBannerText.textContent = demo
     ? '批改引擎还没接上，页面里的数字来自 2026-09-24 的一次真机录音实测。'
     : '本页数字来自本机真机素材（真实录音）的批改结果；起音与判定用的是「老师跟练」同一份引擎代码。';
+}
+
+function loadAssignment(id) {
+  const q = id ? ('?id=' + encodeURIComponent(id)) : '';
+  return fetch(API + '/assignment' + q).then(r => r.json()).then((d) => {
+    currentAid = d.id || id || '';
+    applyAssignment(d.assignment, d.standard, d.demo, d.real);
+    return d;
+  });
+}
+
+// 作业选择器：把 data/assignments 里登记好的作业列出来
+fetch(API + '/assignments').then(r => r.json()).then(({ assignments, current }) => {
+  if (!assignments || assignments.length < 2) return;
+  el.pick.innerHTML = assignments.map(a =>
+    '<option value="' + esc(a.id) + '">' + esc(a.title || a.id)
+    + (a.has_report ? '（已批改）' : '') + '</option>').join('');
+  el.pick.hidden = false;
+  el.pick.value = current;
+  el.pick.addEventListener('change', () => {
+    show(el.resultCard, false);
+    loadAssignment(el.pick.value);
+  });
 });
+
+loadAssignment();
 
 // ── 选文件 / 拖拽 ────────────────────────────────────────────────
 el.drop.addEventListener('click', () => el.file.click());
@@ -128,12 +155,13 @@ el.submit.addEventListener('click', async () => {
   submittedLabel = picked ? picked.name : el.url.value.trim();
   try {
     let resp;
+    const q = '?id=' + encodeURIComponent(currentAid || '');
     if (picked) {
       const fd = new FormData();
       fd.append('audio', picked, picked.name);
-      resp = await fetch(API + '/submit', { method: 'POST', body: fd });
+      resp = await fetch(API + '/submit' + q, { method: 'POST', body: fd });
     } else {
-      resp = await fetch(API + '/submit', {
+      resp = await fetch(API + '/submit' + q, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: el.url.value.trim() }),
       });
@@ -190,6 +218,18 @@ function render(r) {
   el.reportMeta.innerHTML = metaRows
     .map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>')
     .join('');
+
+  // 这条作业还没有录音样例：只显示标准答案，不显示分数
+  if (r.no_audio) {
+    show(el.noAudio, true);
+    show(el.reportBody, false);
+    el.noAudio.textContent = r.note || '这条作业还没有录音样例。';
+    el.demoNote.textContent = r.note || '';
+    el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  show(el.noAudio, false);
+  show(el.reportBody, true);
 
   el.score.textContent = r.score;
   el.score.style.color = r.passed ? 'var(--ok)' : 'var(--bad)';

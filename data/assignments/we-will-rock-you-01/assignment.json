@@ -1,0 +1,36 @@
+{
+ "id": "we-will-rock-you-01",
+ "title": "We will rock you",
+ "artist": "Queen",
+ "course": "一对一 · 课后作业",
+ "lesson": "We will rock you",
+ "standard": {
+  "title": "We will rock you",
+  "artist": "Queen",
+  "tempo": 80.0,
+  "measures": 41,
+  "track_index": 2,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 285,
+  "notes_all": 285,
+  "crop": "",
+  "bar_from": 28,
+  "bar_to": 41,
+  "source": "E:\\HomeworkGrader\\data\\.gp\\queen-we_will_rock_you.gp4",
+  "source_kind": "老师上传的 .gp"
+ },
+ "gp": "E:\\HomeworkGrader\\data\\.gp\\queen-we_will_rock_you.gp4",
+ "ref": "data/assignments/we-will-rock-you-01/ref.json",
+ "note": "整份谱就是这次作业；这首歌吉他轨只在后半段有音（具体小节看标准说明）。",
+ "created": "2026-09-29"
+}

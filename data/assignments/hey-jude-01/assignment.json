@@ -1,0 +1,36 @@
+{
+ "id": "hey-jude-01",
+ "title": "Hey Jude（第 1~8 小节）",
+ "artist": "The Beatles",
+ "course": "一对一 · 课后作业",
+ "lesson": "Hey Jude（第 1~8 小节）",
+ "standard": {
+  "title": "Hey Jude",
+  "artist": "The Beatles",
+  "tempo": 76.0,
+  "measures": 24,
+  "track_index": 0,
+  "track_name": "Voice",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "命令行指定 --track 0",
+  "notes": 38,
+  "notes_all": 118,
+  "crop": "第 1~8 小节",
+  "bar_from": 1,
+  "bar_to": 8,
+  "source": "E:\\HomeworkGrader\\data\\.gp\\the-beatles-hey_jude.gp3",
+  "source_kind": "老师上传的 .gp"
+ },
+ "gp": "E:\\HomeworkGrader\\data\\.gp\\the-beatles-hey_jude.gp3",
+ "ref": "data/assignments/hey-jude-01/ref.json",
+ "note": "本机那条真机录音只录了第 1~8 小节，所以这次作业就取这一段。",
+ "created": "2026-09-29"
+}

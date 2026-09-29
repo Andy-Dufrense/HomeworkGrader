@@ -80,6 +80,8 @@ def pick_track(tracks):
         best = max(named, key=lambda t: t["notes"])
         return best, ("有 %d 条轨的名字像吉他，取音最多的那条（不对就 --track N）" % len(named)), False
     rest = [t for t in tracks if not t["percussion"]]
+    if len(rest) == 1:
+        return rest[0], "全曲只有一条非打击轨，就是它", True
     if rest:
         return rest[0], "轨名里没有吉他，退回第 0 条非打击轨（不是这条就 --track N）", False
     return None, "没有非打击轨", False

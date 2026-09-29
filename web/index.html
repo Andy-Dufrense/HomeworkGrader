@@ -21,6 +21,7 @@
     <span class="brand-text">作业检查<em>HomeworkGrader</em></span>
   </div>
   <div class="topbar-right">
+    <select class="pick" id="pick" aria-label="选择作业" hidden></select>
     <span class="crumb" id="course">—</span>
     <span class="tag" id="verTag">验证版</span>
   </div>
@@ -111,6 +112,9 @@
 
     <dl class="facts facts-tight" id="reportMeta"></dl>
 
+    <div class="noaudio" id="noAudio" hidden>—</div>
+
+    <div id="reportBody">
     <div class="score-row">
       <div class="score-box">
         <div class="score" id="score">—</div>
@@ -141,6 +145,7 @@
       判定依据：把录音与老师上传的谱面逐音对齐后比对，对错按音名判定；
       起音与判定用的是「老师跟练」同一份引擎代码，不另立一套。
     </p>
+    </div>
 
     <button class="ghost" id="again">再交一次</button>
   </section>
