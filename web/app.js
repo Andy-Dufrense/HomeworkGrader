@@ -253,9 +253,17 @@ function drawMarks(beats, segNotes, errors) {
     div.style.top = Math.round(vb.y + off.y) + 'px';
     div.style.width = Math.max(9, Math.round(vb.w)) + 'px';
     div.style.height = Math.max(9, Math.round(vb.h)) + 'px';
-    // 标记上写清"是什么错"：漏 / 错 / 节奏（用户 2026-09-29：别让我再回头猜）
-    div.innerHTML = '<b>' + esc(KIND_LABEL[e.kind] || '错')
-      + (e.kind === 'timing' || !e.want ? '' : ' ' + esc(e.want)) + '<\/b>';
+    // 标记上写清"是什么错"：漏 A3 / 错 C4 / 抢 0.3s / 拖 0.4s / 停 1.2s
+    // （用户 2026-09-29：别让我再回头猜是哪一种）
+    let label = KIND_LABEL[e.kind] || '错';
+    if (e.kind === 'timing') {
+      label = e.sub === 'early' ? '抢' : (e.sub === 'late' ? '拖' : '停');
+      const secs = (e.seconds != null) ? e.seconds : (e.dev != null ? Math.abs(e.dev) : null);
+      if (secs != null) label += ' ' + secs + 's';
+    } else if (e.want) {
+      label += ' ' + e.want;
+    }
+    div.innerHTML = '<b>' + esc(label) + '<\/b>';
     el.scoreMarks.appendChild(div);
   });
   const n = el.scoreMarks.children.length;

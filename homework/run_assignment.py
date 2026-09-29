@@ -55,6 +55,8 @@ TEMPO_TOL = 0.40          # 整体速度差超过 ±40% 才提
 PAUSE_OVER_SEC = 1.0      # 比谱面多停 1 秒以上，且
 PAUSE_RATIO = 1.8         # 超过谱面间隔的 1.8 倍，才算"明显停顿"
 DRIFT_RATIO = 1.25        # 后半段比前半段慢/快 25% 以上才算"一会快一会慢"
+TIMING_ABS_SEC = 0.20     # 节拍网格：单音偏差 ≥200ms 才算"明显"
+TIMING_BEAT_RATIO = 0.25  # 或者 ≥1/4 拍（快曲子按拍算更合理），两者取更严的
 
 # 跟弹仓库（判定引擎的家）——铁律 Q15/Q29：起音与判定只有那一份代码
 FOLLOW_REPO = os.environ.get("GUITARFOLLOW_REPO", r"E:\GuitarFollowLab")
@@ -200,8 +202,12 @@ def group_issues(issues):
     groups = []
     for it in sorted(issues, key=lambda x: (x.get("note_index") or 0)):
         no = it.get("note_index")
+        kind = it.get("kind")
+        # 只有"逐音对错"这一类才合并成句子；节奏/多弹各自成条（说法不一样，不能混）
+        mergeable = kind in ("wrong_note", "missing")
         cur = groups[-1] if groups else None
-        if cur is not None and no is not None and cur["to_note"] is not None:
+        if (cur is not None and mergeable and cur.get("mergeable")
+                and no is not None and cur["to_note"] is not None):
             same_bar = (it.get("measure") is not None
                         and it.get("measure") == cur["measure"])
             if (no - cur["to_note"] <= 2) or same_bar:
@@ -210,9 +216,11 @@ def group_issues(issues):
                 continue
         groups.append({"items": [it], "from_note": no, "to_note": no,
                        "measure": it.get("measure"), "beat": it.get("beat"),
-                       "raw": it})
+                       "raw": it, "kind": kind, "mergeable": mergeable})
     for g in groups:
-        g["title"] = group_title(g)
+        # 节奏/多弹这类，标题和说法都用它自己的（别套单音那套）
+        g["title"] = (g["raw"].get("title") if g["kind"] in ("extra", "timing")
+                      else group_title(g))
         g["detail"] = group_detail(g)
         g["fix"] = group_fix(g)
         first = g["items"][0]
@@ -241,8 +249,8 @@ def group_title(g):
 
 def group_detail(g):
     items = g["items"]
-    # "多弹/杂音"这一类是手写好的整条问题，别拿单音那套说法去套
-    if len(items) == 1 and items[0].get("kind") == "extra":
+    # "节奏 / 多弹/杂音"这两类是手写好的整条问题，别拿单音那套说法去套
+    if g.get("kind") in ("extra", "timing"):
         return (g.get("raw") or items[0]).get("detail") or "录音里有对不上谱面的音。"
     if len(items) == 1:
         return single_detail(*note_pair(items[0]), kind=items[0].get("kind"))
@@ -369,6 +377,34 @@ def find_pauses(ts, med_score_gap):
     return out
 
 
+def timing_marks(match, events, score, scale, offset, tempo):
+    """节拍网格：把每个音放进"谱面拍子 × 学员速度"的网格里，看它早了多少、晚了多少。
+
+    Q18（用户口径）：在正常演奏段用节拍网格看节奏准不准，**只报用户能明显感觉到的**
+    （BPM 差一点点不报）。门槛用 200ms 或 1/4 拍里更严的那个（快曲子按拍算更合理）：
+
+        dev = 这一下的实际时刻 − （谱面这一拍的时刻 × 学员速度 + 整体位移）
+
+    dev 为正 = 拖拍，为负 = 抢拍。整体快慢（scale）已经在模型里扣掉了，
+    所以这里报的是"相对于他自己的速度，这一下早了/晚了"。
+    节奏**不吃分**（Q9/Q18：整体变速允许、抢拖只提示），只标在谱面上、列进清单。
+    """
+    beat = 60.0 / float(tempo or 80)
+    thr = min(TIMING_ABS_SEC, beat * TIMING_BEAT_RATIO)
+    out = []
+    for j, i in sorted(match.items()):
+        want = scale * score[j]["t"] + offset
+        dev = events[i]["t"] - want
+        if abs(dev) < thr:
+            continue
+        out.append({"kind": "timing", "sub": "late" if dev > 0 else "early",
+                    "note_index": j + 1, "t_audio": round(events[i]["t"], 2),
+                    "t_score": round(float(score[j]["t"]), 2),
+                    "dev": round(dev, 2), "dev_beats": round(dev / beat, 2),
+                    "beat_sec": round(beat, 3)})
+    return out
+
+
 def verdict_text(score, pass_line, key_groups, process, total_issues):
     """一句话总评（老师口吻，Q26 的雏形：先说结论，再指一处最值得改的）。"""
     if total_issues == 0:
@@ -491,7 +527,7 @@ def check_repeat(events, extras, score, scale, offset, audio, jobdir, band):
             "offset": round(off2, 3)}
 
 
-def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
+def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     """起音（引擎）→ 配对（我们自己：模型 + 单调 DP）→ 判定（引擎的判定方式）。
 
     返回 (rows, info)：rows 和 bridge 那条路同一个形状，好直接喂报告层；
@@ -587,6 +623,8 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0)):
                           "t_score": round(float(score[j2]["t"]), 2),
                           "seconds": round(got - exp, 2)})
     info["timing_marks"] = marks
+    # 节拍网格：抢拍 / 拖拍（和上面的停顿合并成同一份"节奏标记"）
+    info["timing_marks"] += timing_marks(match, events, score, scale, offset, tempo)
     return rows, info
 
 
@@ -804,13 +842,40 @@ def main(argv=None):
     # ── 路线 A：跑跟弹产品页自己的链路（推荐） ────────────────────────────
     # ── 路线 0（默认）：作业批改自己的链路 —— 我们的起音+配对，引擎的判定 ──
     if args.engine == "pair":
-        rows, pinfo = pair_pipeline(args.audio, score, jobdir, (lo, hi))
+        rows, pinfo = pair_pipeline(args.audio, score, jobdir, (lo, hi),
+                                    tempo=standard.get("tempo"))
         counts = {"ok": 0, "wrong_note": 0, "missing": 0, "extra": 0}
         for r in rows:
             counts[r["kind"]] = counts.get(r["kind"], 0) + 1
         # 多弹：只有"能再独立对齐上谱面大部分音"的那一遍才算重复弹，否则只当中性提示
         rep = pinfo.get("repeat") or {}
         issues = issues_from_rows(rows, score, standard.get("tempo"))
+        # 节拍网格那些标记也进清单（标着"节奏"），但**不吃分**（Q9/Q18：抢拖只提示）
+        beats = beat_index_map(score, standard.get("tempo"))
+        for m in pinfo.get("timing_marks") or []:
+            j = (m.get("note_index") or 0) - 1
+            sn = score[j] if 0 <= j < len(score) else None
+            if sn is not None and sn.get("measure") is not None:
+                title = "第 %d 小节 · 第 %d 拍" % (int(sn["measure"]) + 1,
+                                                beats.get(j) or (int(sn.get("beat") or 0) + 1))
+            else:
+                title = "本段第 %d 个音" % (j + 1)
+            sub = m.get("sub")
+            if sub in ("early", "late"):
+                detail = ("这里%s了 %.2f 秒（约 %.2f 拍）—— 对着节拍器再走一遍就顺了。"
+                          % ("抢" if sub == "early" else "拖",
+                             abs(m.get("dev") or 0), abs(m.get("dev_beats") or 0)))
+            else:
+                detail = "这里停了约 %.1f 秒（弹错了也接着往下，别停）。" % (m.get("seconds") or 0)
+            issues.append({
+                "title": title, "measure": (int(sn["measure"]) + 1) if sn and sn.get("measure") is not None else None,
+                "beat": (beats.get(j) if sn is not None else None),
+                "note_index": j + 1, "t_audio": m.get("t_audio"),
+                "t_score": m.get("t_score"), "kind": "timing",
+                "detail": detail, "fix": "开着节拍器，从慢速开始把这一句走顺。",
+                "items": [{"want": None, "got": None, "kind": "timing",
+                           "measure": None, "beat": None, "t_audio": m.get("t_audio")}],
+            })
         if rep.get("repeat"):
             pass  # 重复的那一遍不当作问题（下面写进"过程提醒"）
         elif rep.get("count", 0) >= 3:
@@ -828,13 +893,20 @@ def main(argv=None):
         groups = rank_groups(group_issues(issues))
         key_groups = groups[:KEY_ISSUES]
         rest_groups = groups[KEY_ISSUES:]
-        pauses = [(m["t_audio"], m["seconds"]) for m in pinfo.get("timing_marks", [])]
+        pauses = [(m["t_audio"], m["seconds"]) for m in pinfo.get("timing_marks", [])
+                  if m.get("seconds") is not None]
         process = process_notes([{"t": e["t"]} for e in pinfo.get("onsets_list", [])],
                                 score, pauses=pauses)
         if pinfo.get("weak_confirmed"):
             process.insert(0, "有 %d 处引擎自己量到的音名就是谱面那个音、只是判定证据偏弱"
                               "（多半是前一个音还在响）—— 这几处按「音名一致」算过。"
                            % pinfo["weak_confirmed"])
+        n_timing = sum(1 for m in pinfo.get("timing_marks") or [] if m.get("sub"))
+        if n_timing:
+            # 有抢拍/拖拍时，别提"整段速度和节奏是稳的"（自相矛盾）
+            process = [p for p in process if not p.startswith("整段速度和节奏是稳的")]
+            process.append("节奏：有 %d 处明显抢拍/拖拍（都在下面清单里标着「节奏」）；"
+                           "节奏不吃分，整段的速度已经扣掉不算偏差了。" % n_timing)
         if rep.get("repeat"):
             process.insert(0, "你把作业弹了两遍：第二遍有 %d/%d 个音也对上了。"
                               "作业只需要一遍，多出来的第二遍没算进分数。"
@@ -897,7 +969,7 @@ def main(argv=None):
                              "measure": it.get("measure"), "beat": it.get("beat"),
                              "kind": it.get("kind"),
                              "want": note_pair(it)[0], "got": note_pair(it)[1]}
-                            for it in issues]
+                            for it in issues if it.get("kind") != "timing"]
                            + [dict(m) for m in pinfo.get("timing_marks") or []],
             "process": process,
             "score_notes": [{"t": round(n["t"], 3), "string": n.get("string"),
