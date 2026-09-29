@@ -86,6 +86,7 @@ E:\Python\python.exe -X utf8 homework\run_assignment.py ^
 | 对齐（身份锚定 + 单调 DP + 置信度） | ✅ `homework/align.py`，合成回归 26 项全过 |
 | 逐音比对 / 聚合 / 打分 | ✅ `homework/grade.py` + `run_assignment.py` |
 | 前端（三步流程 + 报告页） | ✅ 2026-09-29 重做成对外汇报版（参数表 + 批改环节 + 报告表头 + 打印样式）；自检 11 项全过，`tools/shot_web.py` 出手机/投屏三张图 |
+| 前端看谱面（alphaTab 画 .gp） | ✅ 2026-09-29；「标准答案（谱面）」卡画五线谱+六线谱，跟着作业选择器换；自检 12 项全过 |
 | 首次真机实测 | ✅ 6415 分解和弦：起音 55 ｜ 对 30 / 错 3 / 漏 0 |
 | 引擎接入方式 | ✅ 走跟弹产品页那条链路（自己拼 engine 调用数字对不上，已放弃） |
 | 参考谱面（.gp → 作业那一段，`reference.py`） | ✅ 2026-09-29；Q6 选吉他轨（多轨谱别挑到人声/钢琴）；完成度从 34% 修到 94% |
@@ -111,6 +112,7 @@ E:\Python\python.exe -X utf8 homework\run_assignment.py ^
 ```
 homework/    服务端与算法（reference / align / grade / run_assignment / server / 两个 Node 引擎桥）
 web/         前端（index.html / style.css / app.js）
+web/vendor/  第三方运行文件（alphaTab + Bravura 字体，画谱面用；来源见里面的 README）
 tools/       口径问答、对齐探针、合成回归、前端截图自检
 data/        音频库、批改中间产物（不进 git）+ 作业库 data/assignments/（进 git）
 scores/      与 GuitarFollow 共用的曲谱库；老师给的 .gp 不进 git，practice/ 生成的练习谱进 git

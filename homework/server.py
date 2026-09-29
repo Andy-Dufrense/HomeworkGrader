@@ -31,7 +31,11 @@ SCORE_TIMELINE = os.environ.get(
 
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
-        ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png"}
+        ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png",
+        ".woff2": "font/woff2", ".otf": "font/otf", ".ttf": "font/ttf",
+        ".gp": "application/octet-stream", ".gp3": "application/octet-stream",
+        ".gp4": "application/octet-stream", ".gp5": "application/octet-stream",
+        ".gp7": "application/octet-stream"}
 
 # ── 作业（第一版就一个，Q32：这节课作业是 Hey Jude）──────────────────────
 ASSIGNMENT = {
@@ -376,6 +380,15 @@ class Handler(BaseHTTPRequestHandler):
                              "crop": std.get("crop") or "",
                              "has_report": job_page(a["id"]) is not None})
             return self._send(200, {"assignments": rows, "current": aid})
+        if path == "/api/score":
+            # 把这次作业的 .gp 原文给前端（alphaTab 直接读它画谱）
+            a = load_assignment(aid)
+            gp = (a or {}).get("gp")
+            if not gp or not os.path.isfile(gp):
+                return self._send(404, "no score", "text/plain; charset=utf-8")
+            with open(gp, "rb") as f:
+                body = f.read()
+            return self._send(200, body, "application/octet-stream")
         if path == "/api/assignment":
             card = card_for(aid)
             if card is None:

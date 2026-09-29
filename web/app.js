@@ -8,10 +8,12 @@ let pollTimer = null;
 let meta = {};              // /api/assignment 回来的作业信息
 let submittedLabel = '';    // 这次交的是什么（文件名 / 直链）
 let currentAid = '';        // 当前选中的作业 id
+let scoreApi = null;        // alphaTab 实例（画谱面用；换作业就销毁重建）
 
 const el = {
   course: $('course'), verTag: $('verTag'),
   pick: $('pick'),
+  scoreView: $('scoreView'), scoreHint: $('scoreHint'), scoreCard: $('scoreCard'),
   demoBanner: $('demoBanner'), demoBannerText: $('demoBannerText'),
   steps: $('steps'),
   title: $('title'), subtitle: $('subtitle'), passline: $('passline'),
@@ -111,7 +113,51 @@ function loadAssignment(id) {
   return fetch(API + '/assignment' + q).then(r => r.json()).then((d) => {
     currentAid = d.id || id || '';
     applyAssignment(d.assignment, d.standard, d.demo, d.real);
+    renderScore(currentAid, d.standard || {});
     return d;
+  });
+}
+
+// ── 谱面：用 alphaTab 把老师那份 .gp 画出来（跟跟练页同一份库）──────────
+function renderScore(aid, std) {
+  if (!el.scoreView || !el.scoreHint) return;
+  if (!window.alphaTab) {
+    el.scoreHint.textContent = '谱面库没加载起来（vendor/alphaTab.min.js）。';
+    return;
+  }
+  if (scoreApi && scoreApi.destroy) { try { scoreApi.destroy(); } catch (e) { /* ignore */ } }
+  scoreApi = null;
+  el.scoreView.innerHTML = '';
+  el.scoreHint.textContent = '正在加载谱面…';
+  const url = API + '/score?id=' + encodeURIComponent(aid || '');
+  const display = {
+    layoutMode: 'page',
+    // 注意：这里要用 alphaTab 的**枚举名**（ScoreTab），写成 'score-tab' 会让
+    // 渲染器的 this.profile 变 undefined，报 "Cannot read properties of undefined (reading 'has')"
+    staveProfile: 'ScoreTab',                      // 五线谱 + 六线谱一起显示
+    scale: window.innerWidth < 560 ? 0.6 : 0.9,
+  };
+  // 这次作业只取了一段（比如 Hey Jude 第 1~8 小节）→ 谱面也只画这一段
+  if (std && std.crop && std.bar_from && std.bar_to) {
+    display.startBar = std.bar_from;
+    display.barCount = std.bar_to - std.bar_from + 1;
+  }
+  const api = new alphaTab.AlphaTabApi(el.scoreView, {
+    file: url,
+    core: { fontDirectory: './vendor/font/' },     // 字体在本地（CDN 被挡）
+    display: display,
+    player: { enablePlayer: false, enableCursor: false },
+  });
+  scoreApi = api;
+  api.error.on((e) => {
+    el.scoreHint.textContent = '谱面画不出来：' + ((e && (e.message || e)) || e);
+  });
+  api.scoreLoaded.on((s) => {
+    el.scoreHint.textContent = ('谱面：' + (s.title || '—')
+      + (s.artist ? ' — ' + s.artist : '')
+      + '（' + s.tracks.length + ' 个声部，全曲 ' + s.masterBars.length + ' 小节，'
+      + (std && std.crop ? '这里显示 ' + std.crop + '，' : '')
+      + Math.round(s.tempo || 0) + ' BPM）');
   });
 }
 

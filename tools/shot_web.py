@@ -43,6 +43,13 @@ def main():
                        page.eval_on_selector('#submit', 'el => el.disabled') is True))
         checks.append(("第一屏：没横向溢出",
                        page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")))
+        # 谱面：等 alphaTab 把 SVG 画出来（最多 15 秒）
+        try:
+            page.wait_for_selector("#scoreView svg", timeout=15000)
+            score_ok = True
+        except Exception:
+            score_ok = False
+        checks.append(("第一屏：标准答案谱面画出来了", score_ok))
 
         page.fill("#url", "https://example.com/demo.mp3")
         checks.append(("填了直链后提交键变亮",
