@@ -25,6 +25,8 @@ from urllib.parse import urlparse, parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 WEB = os.path.join(ROOT, "web")
+if HERE not in sys.path:          # 让服务端也能 import 同目录的 db.py
+    sys.path.insert(0, HERE)
 
 PORT = int(os.environ.get("HOMEWORK_PORT", "1310"))
 
@@ -52,9 +54,8 @@ ASSIGNMENT = {
     "source": "标准答案：老师上传的 Guitar Pro 谱面（.gp）",
     "pass_line": 80,
     "record_tips": [
-        "戴耳机，别让伴奏被麦克风收进去",
-        "环境安静一点，手机离琴半米左右",
-        "弹错了也继续弹完，别停下来重来",
+        "录的时候只留吉他的声音：伴奏、人声别一起收进来",
+        "弹错了也接着弹完，别停下来重来",
     ],
 }
 
@@ -82,9 +83,9 @@ LIB = os.environ.get("GUITARFOLLOW_PYTHONPATH", r"E:\VirtuCoach-Lib")
 NEED_LIB = os.environ.get("HOMEWORK_AUDIO_PATH", r"E:\Lib\site-packages")
 
 RECORD_TIPS = [
-    "戴耳机，别让伴奏被麦克风收进去",
-    "环境安静一点，手机离琴半米左右",
-    "弹错了也继续弹完，别停下来重来",
+    # 用户 2026-09-29 定：不提耳机、不规定距离；只说"只留吉他声"和"错了继续弹"。
+    "录的时候只留吉他的声音：伴奏、人声别一起收进来",
+    "弹错了也接着弹完，别停下来重来",
 ]
 
 # 及格线（用户 2026-09-29 定：90 分）
@@ -426,6 +427,15 @@ def grade_submission(task_id, aid, saved_path, name):
         if page is None:
             return upd(status="failed", stage="这次没生成报告：%s" % (out or "")[-300:])
         page["submitted"] = {"file": name, "seconds": round(secs, 1), "job": job_id}
+        # 记一笔到本项目自己的库（Q30）；写库失败不影响出报告
+        try:
+            import db as hwdb
+            con = hwdb.init(hwdb.connect())
+            hwdb.upsert_assignment(con, load_assignment(aid))
+            hwdb.record_submission(con, aid, name, round(secs, 1), job_id, page)
+            con.close()
+        except Exception as e:
+            print("  [db] 写库失败（不影响批改）：%s" % e)
         upd(status="completed", progress=100, stage="批改完成", result=page)
     except Exception as e:                                   # 别把线程搞死
         upd(status="failed", stage="批改失败：%s" % e)

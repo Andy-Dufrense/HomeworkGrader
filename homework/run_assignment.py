@@ -51,19 +51,25 @@ PAIR_MATCH_WIN = 0.8        # 单调 DP 里允许的时间残差（秒）
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
 PASS_LINE = int(os.environ.get("HOMEWORK_PASS_LINE", "90"))
 # 过程提醒的"明显"门槛（Q9 / Q18 的建议值，用户说改就改）
-TEMPO_TOL = 0.40          # 整体速度差超过 ±40% 才提
+TEMPO_TOL = 0.30          # 整体速度差超过 ±30% 才提（用户 2026-09-29 定）
 PAUSE_OVER_SEC = 1.0      # 比谱面多停 1 秒以上，且
 PAUSE_RATIO = 1.8         # 超过谱面间隔的 1.8 倍，才算"明显停顿"
 DRIFT_RATIO = 1.25        # 后半段比前半段慢/快 25% 以上才算"一会快一会慢"
 # 节拍网格的容忍度 —— **照抄跟弹的规则**（judge-loop.js 224 行，用户 2026-09-23 定的）：
 #   容许偏差 = clamp(到下一个音的间隔 × 45%, 100ms, 350ms)，**第一个音翻倍**
 #   "跟得上比掐得准重要"。作业这边不再自造"200ms / 1/4 拍"那套。
+# 单个音的抢拍/拖拍：**要有容忍度，但不能完全不报**（用户 2026-09-29 原话：
+#   "抢了 1.几秒或者慢了 1.几秒都是很明显的，应该报"）。所以门槛定 1.0 秒：
+#   零点几秒（含跟弹那条 100~350ms 的容忍度）一律不报，≥1 秒才当一处"节奏"报出来。
+TIMING_ABS_SEC = 1.0
+# 跟弹那条逐音容忍度（judge-loop.js 224 行，用户 2026-09-23 定的）：
+#   容许偏差 = clamp(到下一个音的间隔 × 45%, 100ms, 350ms)，第一个音翻倍
 TIMING_FRAC = 0.45
 TIMING_MIN_MS = 100.0
 TIMING_MAX_MS = 350.0
-# "节奏不稳"（一会儿快一会儿慢）：滑动窗里最快和最慢的局部速度比差多少才算明显
-UNSTABLE_WIN = 4          # 连着看 4 个间隔（≈5 个音）
-UNSTABLE_RATIO = 1.6      # 窗内最快/最慢差 60% 以上
+# "节奏不稳"（这一段 70、那一段 90 那种）：按局部 BPM 漂移判，不是看相邻间隔抖动。
+UNSTABLE_WIN = 6          # 局部 BPM 用连续 6 个音的跨度算（≈7 个音，够稳又不笨）
+UNSTABLE_RATIO = 1.30     # 最快段 / 最慢段 超过 30% 才算"明显不一致"（待实测标定）
 
 # 跟弹仓库（判定引擎的家）——铁律 Q15/Q29：起音与判定只有那一份代码
 FOLLOW_REPO = os.environ.get("GUITARFOLLOW_REPO", r"E:\GuitarFollowLab")
@@ -463,40 +469,47 @@ def timing_tolerance_ms(score, j):
     return base * 2 if j == 0 else base
 
 
-def unstable_spans(match, events, score, scale, win=None, ratio=None):
-    """找出"一会儿快一会儿慢"的段落（Q9 原话：明显的节奏不一致要提示节奏不稳）。
+def unstable_spans(match, events, score, scale, tempo, win=None, ratio=None):
+    """找出"这一段 70、那一段 90"那种节奏不稳（用户 2026-09-29 给的判据）。
 
-    口径（2026-09-29 用户）：**单个音的抢/拖要有容忍度、不报**；
-    只在"来回快慢、明显不一致"的地方报一句"节奏不稳，跟着节拍器练"。
+    口径：
+      * **单个音的抢/拖**：≥1 秒才报（timing_marks），零点几秒不报；
+      * **节奏不稳**：局部 BPM 这一段和那一段明显不一样才算 —— 不是看相邻两个音抖没抖。
 
-    做法：相邻两个配上的音算一个**局部速度比** = 实际间隔 / 谱面该有的间隔；
-    在一个滑动窗里，最快和最慢那两个局部速度比差得太多，就是这一段不稳。
+    做法：在连续 win 个音的跨度上算**局部 BPM**（= 谱面速度 ÷ 该段的实际速度比），
+    然后把最快的段和最慢的段比一下；超过 ratio 就报"这一带多少拍/分、那一带多少拍/分"。
     """
     win = win or UNSTABLE_WIN
     ratio = ratio or UNSTABLE_RATIO
     ordered = sorted(match.items(), key=lambda kv: kv[1])      # 按起音时间
-    ratios = []
-    for (j1, i1), (j2, i2) in zip(ordered, ordered[1:]):
-        exp = (score[j2]["t"] - score[j1]["t"]) * scale
-        got = events[i2]["t"] - events[i1]["t"]
-        if exp > 0.05:
-            ratios.append((j2, got / exp))
-    spans = []
-    for s in range(max(0, len(ratios) - win + 1)):
-        w = ratios[s:s + win]
-        if len(w) < win:
-            break
-        rs = [r for _, r in w]
-        if max(rs) / max(1e-6, min(rs)) > ratio:
-            spans.append((w[0][0], w[-1][0]))
-    # 合并挨着的窗口
-    merged = []
-    for a, b in spans:
-        if merged and a <= merged[-1][1] + win:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
-        else:
-            merged.append((a, b))
-    return merged
+    if len(ordered) < win:
+        return []
+    wins = []
+    for s in range(len(ordered) - win + 1):
+        w = ordered[s:s + win]
+        # 用窗内**每个间隔的中位数**估这一带的实际速度 ——
+        # 拿首尾跨度算的话，"中间某一下慢了"会把整段算成慢速段（实测过）。
+        ratios = []
+        for (j1, i1), (j2, i2) in zip(w, w[1:]):
+            dt_s = score[j2]["t"] - score[j1]["t"]
+            dt_a = events[i2]["t"] - events[i1]["t"]
+            if dt_s > 0.05 and dt_a > 0.05:
+                ratios.append(dt_a / dt_s)
+        if not ratios:
+            continue
+        ratios.sort()
+        med = ratios[len(ratios) // 2]                 # 局部速度比（中位数）
+        bpm = float(tempo) / med if med > 0 else 0.0   # 这一带学员实际弹出来的速度
+        wins.append({"from": w[0][0], "to": w[-1][0], "bpm": bpm})
+    if len(wins) < 2:
+        return []
+    slow = min(wins, key=lambda x: x["bpm"])
+    fast = max(wins, key=lambda x: x["bpm"])
+    if slow["bpm"] <= 0 or fast["bpm"] / slow["bpm"] < ratio:
+        return []
+    return [{"from": slow["from"], "to": slow["to"], "bpm": round(slow["bpm"]),
+             "fast_from": fast["from"], "fast_to": fast["to"], "fast_bpm": round(fast["bpm"]),
+             "ratio": round(fast["bpm"] / slow["bpm"], 2)}]
 
 
 def timing_marks(match, events, score, scale, offset, tempo=None):
@@ -517,7 +530,9 @@ def timing_marks(match, events, score, scale, offset, tempo=None):
         want = scale * score[j]["t"] + offset
         dev = events[i]["t"] - want
         tol_ms = timing_tolerance_ms(score, j)
-        if abs(dev) * 1000.0 <= tol_ms:
+        # 门槛：**1.0 秒**（用户口径：零点几秒可以容忍，1 秒以上就是明显了）；
+        # 跟弹那条逐音容忍度（100~350ms）比它小，所以取两者更大的那个。
+        if abs(dev) < max(TIMING_ABS_SEC, tol_ms / 1000.0):
             continue
         out.append({"kind": "timing", "sub": "late" if dev > 0 else "early",
                     "note_index": j + 1, "t_audio": round(events[i]["t"], 2),
@@ -748,7 +763,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     info["timing_marks"] = marks
     # 节拍网格：抢拍 / 拖拍（和上面的停顿合并成同一份"节奏标记"）
     info["timing_marks"] += timing_marks(match, events, score, scale, offset, tempo)
-    info["unstable_spans"] = unstable_spans(match, events, score, scale)
+    info["unstable_spans"] = unstable_spans(match, events, score, scale, tempo)
     return rows, info
 
 
@@ -978,6 +993,34 @@ def main(argv=None):
         # 多弹：只有"能再独立对齐上谱面大部分音"的那一遍才算重复弹，否则只当中性提示
         rep = pinfo.get("repeat") or {}
         issues = issues_from_rows(rows, score, standard.get("tempo"))
+        # 单个音的抢/拖：≥1 秒才报（用户口径），标"节奏"、进清单，但**不吃分**
+        beats = beat_index_map(score, standard.get("tempo"))
+        for m in pinfo.get("timing_marks") or []:
+            j = (m.get("note_index") or 0) - 1
+            sn = score[j] if 0 <= j < len(score) else None
+            if sn is not None and sn.get("measure") is not None:
+                title = "第 %d 小节 · 第 %d 拍" % (int(sn["measure"]) + 1,
+                                                beats.get(j) or (int(sn.get("beat") or 0) + 1))
+            else:
+                title = "本段第 %d 个音" % (j + 1)
+            sub = m.get("sub")
+            if sub in ("early", "late"):
+                detail = ("这里%s了 %.1f 秒 —— 这一下跟节拍器单独走一遍。"
+                          % ("抢" if sub == "early" else "拖", abs(m.get("dev") or 0)))
+            else:
+                detail = ("这里谱面本来要接着弹，你停了约 %.1f 秒 —— 弹错了也接着往下，别停。"
+                          % (m.get("seconds") or 0))
+            issues.append({
+                "title": title,
+                "measure": (int(sn["measure"]) + 1) if sn is not None
+                           and sn.get("measure") is not None else None,
+                "beat": (beats.get(j) if sn is not None else None),
+                "note_index": j + 1, "t_audio": m.get("t_audio"),
+                "t_score": m.get("t_score"), "kind": "timing",
+                "detail": detail, "fix": "开着节拍器，从慢速把这一句走顺。",
+                "items": [{"want": None, "got": None, "kind": "timing",
+                           "measure": None, "beat": None, "t_audio": m.get("t_audio")}],
+            })
         if rep.get("repeat"):
             pass  # 重复的那一遍不当作问题（下面写进"过程提醒"）
         elif rep.get("count", 0) >= 3:
@@ -1008,15 +1051,32 @@ def main(argv=None):
         spans = pinfo.get("unstable_spans") or []
         if spans:
             process = [p for p in process if not p.startswith("整段速度和节奏是稳的")]
-            where = []
-            for a, b in spans[:3]:
-                sa, sb = score[a] if a < len(score) else None, score[b] if b < len(score) else None
+            sp = spans[0]
+
+            def _where(a, b):
+                sa = score[a] if 0 <= a < len(score) else None
+                sb = score[b] if 0 <= b < len(score) else None
                 if sa is not None and sa.get("measure") is not None and sb is not None:
-                    where.append("第 %d~%d 小节" % (int(sa["measure"]) + 1, int(sb["measure"]) + 1))
-                else:
-                    where.append("第 %d~%d 个音" % (a + 1, b + 1))
-            process.append("节奏：%s那儿一会儿快一会儿慢、不太稳，跟着节拍器再走两遍。"
-                           % "、".join(where))
+                    if int(sa["measure"]) == int(sb["measure"]):
+                        return "第 %d 小节" % (int(sa["measure"]) + 1)
+                    return "第 %d~%d 小节" % (int(sa["measure"]) + 1, int(sb["measure"]) + 1)
+                return "第 %d~%d 个音" % (a + 1, b + 1)
+
+            # 按小节先后说（老师说话的顺序：先早的那段，再说后面变成多少）
+            if sp["from"] <= sp["fast_from"]:
+                first, first_bpm, later, later_bpm = (
+                    _where(sp["from"], sp["to"]), sp["bpm"],
+                    _where(sp["fast_from"], sp["fast_to"]), sp["fast_bpm"])
+                how = "快了"
+            else:
+                first, first_bpm, later, later_bpm = (
+                    _where(sp["fast_from"], sp["fast_to"]), sp["fast_bpm"],
+                    _where(sp["from"], sp["to"]), sp["bpm"])
+                how = "慢了"
+            process.append("节奏不稳：%s大概 %d 拍/分，到了%s变成 %d 左右（%s约 %d%%）—— "
+                           "这一遍一会儿快一会儿慢，跟着节拍器再走两遍。"
+                           % (first, first_bpm, later, later_bpm, how,
+                              int(round((sp["ratio"] - 1) * 100))))
         if rep.get("repeat"):
             process.insert(0, "你把作业弹了两遍：第二遍有 %d/%d 个音也对上了。"
                               "作业只需要一遍，多出来的第二遍没算进分数。"
@@ -1085,7 +1145,9 @@ def main(argv=None):
                              "measure": it.get("measure"), "beat": it.get("beat"),
                              "kind": it.get("kind"),
                              "want": note_pair(it)[0], "got": note_pair(it)[1]}
-                            for it in issues if it.get("kind") != "timing"],
+                            for it in issues if it.get("kind") != "timing"]
+                           + [dict(m, kind="timing")
+                              for m in pinfo.get("timing_marks") or []],
             "process": process,
             "score_notes": [{"t": round(n["t"], 3), "string": n.get("string"),
                              "midi": int(n["midi"])} for n in score],

@@ -1,11 +1,11 @@
 {
- "id": "1645-T3231323",
- "title": "1645 · C–Am–F–G（分解和弦 T3231323）",
+ "id": "1645-dyad-t3",
+ "title": "1645 · C–Am–F–G（双音（根音＋三弦））",
  "artist": "HomeworkGrader",
  "course": "练习 · 常见和弦走向",
- "lesson": "1645 · C–Am–F–G（分解和弦 T3231323）",
+ "lesson": "1645 · C–Am–F–G（双音（根音＋三弦））",
  "standard": {
-  "title": "1645 C-Am-F-G / T3231323",
+  "title": "1645 C-Am-F-G / dyad-t3",
   "artist": "HomeworkGrader",
   "tempo": 80.0,
   "measures": 4,
@@ -26,11 +26,11 @@
   "crop": "",
   "bar_from": 1,
   "bar_to": 4,
-  "source": "E:\\HomeworkGrader\\scores\\practice\\1645-T3231323.gp4",
+  "source": "E:\\HomeworkGrader\\scores\\practice\\1645-dyad-t3.gp4",
   "source_kind": "本机生成的练习谱"
  },
- "gp": "E:\\HomeworkGrader\\scores\\practice\\1645-T3231323.gp4",
- "ref": "data/assignments/1645-T3231323/ref.json",
- "note": "常见和弦走向 1645，用分解和弦 T3231323弹（每和弦一小节，80 BPM）。",
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\1645-dyad-t3.gp4",
+ "ref": "data/assignments/1645-dyad-t3/ref.json",
+ "note": "常见和弦走向 1645，用双音（根音＋三弦）弹（每和弦一小节，80 BPM）。",
  "created": "2026-09-29"
 }

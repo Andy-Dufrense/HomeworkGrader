@@ -60,7 +60,14 @@ CHORDS = {
 # 常见分解和弦指法：T = 这个和弦的最低音（按和弦的标准按法），后面是 3/2/1 弦来回
 PATTERNS = {
     "T3231323": ["T", "3", "2", "3", "1", "3", "2", "3"],   # 每拍 2 下，8 分音符
+    # 双音（两根弦一起拨，每拍一下；仍是这些基础 C 调和弦的标准按法）
+    "dyad-t3": [("T", "3")] * 4,        # 根音 + 3 弦那个音（多为五度／八度）
+    "dyad-t2": [("T", "2")] * 4,        # 根音 + 2 弦那个音（多为三度／八度）
 }
+# 给报告/作业名用的中文说法（.gp 的标题必须是 ASCII，所以键用英文）
+PATTERN_LABEL = {"T3231323": "分解和弦 T3231323",
+                 "dyad-t3": "双音（根音＋三弦）",
+                 "dyad-t2": "双音（根音＋二弦）"}
 
 # 常见和弦走向（每个和弦一小节）
 PROGRESSIONS = {
@@ -120,11 +127,13 @@ def build_practice_gp(path, title, chords, pattern_name, tempo=80):
             beat.duration = gp.Duration(value=8)
             beat.status = gp.BeatStatus.normal
             beat.start = start
-            note = gp.Note(beat)
-            note.string, note.value = (shape["bass"] if step == "T" else shape[step])
-            note.velocity = 95
-            note.type = gp.NoteType.normal
-            beat.notes.append(note)
+            # 一步一个音；写成 ("T","3") 这种元组就是**双音**（同一拍里两根弦一起响）
+            for part in (step if isinstance(step, (tuple, list)) else (step,)):
+                note = gp.Note(beat)
+                note.string, note.value = (shape["bass"] if part == "T" else shape[part])
+                note.velocity = 95
+                note.type = gp.NoteType.normal
+                beat.notes.append(note)
             voice.beats.append(beat)
             start += gp.Duration(value=8).time
 
@@ -213,18 +222,25 @@ def cmd_gp(args):
 
 def cmd_progressions(args):
     made = []
-    for name, chords in PROGRESSIONS.items():
-        pat = args.pattern
+    combos = [(name, args.pattern) for name in PROGRESSIONS]
+    # 双音：先用最常见的两个（1645 / 6415），还是这些基础 C 调和弦
+    if not args.no_dyads:
+        for name in ("1645", "6415"):
+            for pat in ("dyad-t3", "dyad-t2"):
+                combos.append((name, pat))
+    for name, pat in combos:
+        chords = PROGRESSIONS[name]
         aid = "%s-%s" % (name, slug(pat))
-        gp_title = "%s %s / %s" % (name, "-".join(chords), pat)
+        gp_title = "%s %s / %s" % (name, "-".join(chords), pat)   # .gp 标题只能 ASCII
         gp_path = os.path.join(PRACTICE_GP, aid + ".gp4")
         build_practice_gp(gp_path, gp_title, chords, pat, tempo=args.tempo)
         a = register(gp_path, aid,
-                     title="%s · %s（分解和弦）" % (name, "–".join(chords)),
+                     title="%s · %s（%s）" % (name, "–".join(chords),
+                                             PATTERN_LABEL.get(pat, pat)),
                      artist="练习谱 · %s" % pat, course="练习 · 常见和弦走向",
                      source_kind="本机生成的练习谱",
-                     note="常见和弦走向 %s，用常见分解和弦指法 %s 弹（每和弦一小节，%d BPM）。"
-                          % (name, pat, args.tempo))
+                     note="常见和弦走向 %s，用%s弹（每和弦一小节，%d BPM）。"
+                          % (name, PATTERN_LABEL.get(pat, pat), args.tempo))
         made.append(a)
         report(a)
     print("\n共生成 %d 份练习作业，谱面在 %s" % (len(made), PRACTICE_GP))
@@ -277,6 +293,7 @@ def main(argv=None):
     p = sub.add_parser("progressions", help="生成常见和弦走向的练习作业")
     p.add_argument("--pattern", default="T3231323", choices=sorted(PATTERNS))
     p.add_argument("--tempo", type=int, default=80)
+    p.add_argument("--no-dyads", action="store_true", help="不生成双音那几条")
     p.set_defaults(func=cmd_progressions)
 
     l = sub.add_parser("list", help="列出已登记的作业")

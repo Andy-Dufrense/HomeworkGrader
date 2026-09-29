@@ -1,9 +1,9 @@
 {
  "id": "4536251-T3231323",
- "title": "4536251 · F–G–Em–Am–Dm–G–C（分解和弦）",
+ "title": "4536251 · F–G–Em–Am–Dm–G–C（分解和弦 T3231323）",
  "artist": "HomeworkGrader",
  "course": "练习 · 常见和弦走向",
- "lesson": "4536251 · F–G–Em–Am–Dm–G–C（分解和弦）",
+ "lesson": "4536251 · F–G–Em–Am–Dm–G–C（分解和弦 T3231323）",
  "standard": {
   "title": "4536251 F-G-Em-Am-Dm-G-C / T3231323",
   "artist": "HomeworkGrader",
@@ -31,6 +31,6 @@
  },
  "gp": "E:\\HomeworkGrader\\scores\\practice\\4536251-T3231323.gp4",
  "ref": "data/assignments/4536251-T3231323/ref.json",
- "note": "常见和弦走向 4536251，用常见分解和弦指法 T3231323 弹（每和弦一小节，80 BPM）。",
+ "note": "常见和弦走向 4536251，用分解和弦 T3231323弹（每和弦一小节，80 BPM）。",
  "created": "2026-09-29"
 }
