@@ -76,6 +76,10 @@ WIN_MAX_MS = float(os.environ.get("HG_WIN_MAX", "683"))      # 12k 下 8192 点
 JUDGE_AT_MS = 90.0          # 产品页：起音后 90ms 出结论
 WIN_START_MS = 30.0         # 长窗从起音后 30ms 开始（跟弹那边"稳定段 30~170ms"）
 SEMITONE = 2 ** (1 / 12.0) - 1
+# 局部时间模型（2026-10-01）：配对的时间先验从"一条全局直线"换成"按邻近锚点插值的
+# 分段直线"。学员局部抢先/拖后时，全局直线会把那一小段整体错开一位 →
+# 表现成"漏一个 + 多弹一个"。默认开；写 HG_LOCAL_WARP=0 退回一条全局直线。
+LOCAL_WARP = os.environ.get("HG_LOCAL_WARP", "1") == "1"
 #   0.5 会把"学员局部慢了一下"的音错判成漏（Hey Jude 上实测：漏 3 → 真漏只有 2）；
 #   1.2 又太宽，会把真的漏弹硬配到隔壁起音上（真漏从 2 变 1）。0.8 刚好。
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
@@ -705,7 +709,44 @@ def _pair_candidates(events, slots, score, scale=1.0, windows=False):
     return pairs, index
 
 
-def _dp_match_units(index, judged, events, slots, score, scale, offset):
+def local_preds(slots, match, events, scale, offset, span=7):
+    """每一格的**局部**预测时刻（分段直线），代替"一条全局直线"。
+
+    为什么要它（查"明明判过却报漏"）：用户允许"一会儿快一会儿慢"，学员在某一小段
+    整体抢了 / 拖了 400ms 很常见。这时一条全局直线会把那一小段**整体错开一位** ——
+    表现就是"漏一个 + 多弹一个"。实测 1645 双音那条：第 18~22 格整体超前约 440ms，
+    全局直线下 DP 只能把起音挪给邻格，于是一处"漏"、一处"多弹"，
+    而那一格的候选判定其实是 pass（fit 132、margin 1.63）。
+
+    做法：拿已经配上的格当锚点，对每一格取它附近最近 span 个锚点做**加权最小二乘**
+    得到该处自己的预测时刻（离得越远权重越小）。锚点太少就退回全局直线。
+    """
+    base = [float(sl["t"]) * scale + offset for sl in slots]
+    anchors = sorted(match)
+    if len(anchors) < 4:
+        return base
+    xs = [float(slots[s]["t"]) for s in anchors]
+    ys = [float(events[match[s]]["t"]) for s in anchors]
+    out = []
+    for s, sl in enumerate(slots):
+        x = float(sl["t"])
+        idx = sorted(range(len(xs)), key=lambda k: abs(xs[k] - x))[:span]
+        sw = sx = sy = sxx = sxy = 0.0
+        for k in idx:
+            w = 1.0 / (0.25 + abs(xs[k] - x))
+            sw += w; sx += w * xs[k]; sy += w * ys[k]
+            sxx += w * xs[k] * xs[k]; sxy += w * xs[k] * ys[k]
+        den = sw * sxx - sx * sx
+        if len(idx) < 2 or abs(den) < 1e-9 or sw <= 0:
+            out.append(base[s])
+            continue
+        a = (sw * sxy - sx * sy) / den
+        b = (sy - a * sx) / sw
+        out.append(a * x + b)
+    return out
+
+
+def _dp_match_units(index, judged, events, slots, score, scale, offset, preds=None):
     """单调 DP（按**格**配对）：两条序列都允许跳过。
 
     跳起音 = 多弹（extra）；跳一格 = 漏弹（这一格里的音全算漏）。
@@ -718,16 +759,21 @@ def _dp_match_units(index, judged, events, slots, score, scale, offset):
     等于"丢一格双音"和"丢一格单音"代价一样，而双音格的收益又只有单音的一半 ——
     优化器会去牺牲双音格。1645 那条真录音上，8 个双音格有 3 个被丢成"漏"，
     还留了 2 个起音没配上。改成按音数算之后，这个问题没了。
+
+    preds 给了就用**局部**预测时刻（见 local_preds），否则用全局直线。
     """
+    def pred(s):
+        return preds[s] if preds is not None else (slots[s]["t"] * scale + offset)
+
     per = {}
     for (i, s, _k), jd in zip(index, judged):
-        dt = abs(events[i]["t"] - (slots[s]["t"] * scale + offset))
+        dt = abs(events[i]["t"] - pred(s))
         if dt > PAIR_MATCH_WIN:
             continue
         per.setdefault((i, s), []).append(jd)
     W = {}
     for (i, s), jds in per.items():
-        dt = abs(events[i]["t"] - (slots[s]["t"] * scale + offset))
+        dt = abs(events[i]["t"] - pred(s))
         k = float(len(jds))
         total = sum(2.0 if jd["pass"] else -0.30 for jd in jds)
         W[(i, s)] = total - dt * 0.5 * k
@@ -913,6 +959,31 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
         pairs, index = _pair_candidates(events, slots, score, scale=scale, windows=True)
         judged = _judge_pairs(pairs, index, audio, jobdir, band, tag="_win")
         match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset)
+
+    # ④ 局部时间模型（2026-10-01）：把"一条全局直线"换成"按邻近锚点插值的分段直线"，再配两轮。
+    #    学员局部抢先 / 拖后时，全局直线会把那一小段整体错开一位 —— 表现就是"漏一个 + 多弹一个"，
+    #    而那一格的候选判定其实是 pass（1645 双音那条第 18~22 格整体超前约 440ms 就是这种）。
+    if LOCAL_WARP:
+        for _ in range(2):
+            preds = local_preds(slots, match, events, scale, offset)
+            match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset,
+                                           preds=preds)
+
+    # 诊断（HG_DEBUG_MATCH=1）：把这一轮"哪一格配到了哪一个起音"落盘，排查"明明判过却报漏"用
+    if os.environ.get("HG_DEBUG_MATCH") == "1":
+        dbg = {"scale": round(scale, 4), "offset": round(offset, 4),
+               "slots": len(slots), "onsets": len(events),
+               "match": [{"slot": s, "slot_t": round(float(slots[s]["t"]), 3),
+                          "notes": [int(score[j]["midi"]) for j in slots[s]["notes"]],
+                          "onset": i, "onset_t": round(float(events[i]["t"]), 3),
+                          "dev_ms": round((float(events[i]["t"])
+                                           - (float(slots[s]["t"]) * scale + offset)) * 1000)}
+                         for s, i in sorted(match.items())],
+               "extra": [{"onset": i, "t": round(float(events[i]["t"]), 3)}
+                         for i in sorted(extra)]}
+        with io.open(os.path.join(jobdir, "match.json"), "w", encoding="utf-8") as f:
+            json.dump(dbg, f, ensure_ascii=False, indent=1)
+        print("配对轨迹已写到 %s" % os.path.join(jobdir, "match.json"))
 
     jd_of = {}
     for (i, s, k), jd in zip(index, judged):
