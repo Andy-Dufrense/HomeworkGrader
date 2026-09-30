@@ -254,47 +254,64 @@ for (const e of (job.entries || [])) {
   const wins = (e.wins && e.wins.length)
     ? e.wins.map((x) => ({ atMs: Number(x.atMs), winMs: Number(x.winMs) }))
     : [{ atMs: 90, winMs: (8192 / SR) * 1000 }];
+  // 候选不止一个：**这一格窗口里所有"放松判据认了"的帧都试一遍，有一个过就算过**。
+  // 为什么要逐个试：同一格里常有"上一个音的那一下"（电平跳得更猛）和"这一下真起音"
+  // （频带抬头更明显但电平跳得小），只挑"抬得最高"那个会挑错（实测 6415慢速 E4：
+  // 该响的是 9.94，按电平挑会挑到 9.55，判不过）。
+  const candsT = [];
+  if (MODE === 'onset') {
+    const picked = [];
+    const T0c = Math.max(0, e.winFrom != null ? Number(e.winFrom) * 1000 : e.t * 1000 - SCAN_RANGE_MS);
+    const T1c = e.winTo != null ? Number(e.winTo) * 1000 : e.t * 1000 + SCAN_RANGE_MS;
+    for (const f of frameInfo) {
+      const tms = f.t * 1000;
+      if (tms < T0c || tms > T1c || !f.relaxed) continue;
+      picked.push(f);
+    }
+    picked.sort((a, b) => (b.hfBand - a.hfBand) || (a.t - b.t));
+    for (const f of picked) {
+      if (candsT.some((u) => Math.abs(u - f.t) < 0.08)) continue;
+      candsT.push(f.t);
+      if (candsT.length >= 6) break;
+    }
+    candsT.sort((a, b) => a - b);
+  } else {
+    candsT.push(best.t);
+  }
   let judged = null, usedAt = wins[0].atMs;
-  if (best.ok === true || best.rise >= RISE) {
-    // 逐扇窗都判一遍，取**最有把握**的那一扇：先要"过"，同是"过"就取失配更小的。
-    // （正常路径是"有一扇过就算过"—— 那是给实时/连续音用的；这里是**事后补判**，
-    //   宁可挑证据最硬的那扇窗，也不要"碰巧过"。）
+  let bestPass = null, bestAny = null;
+  for (const tc of candsT) {
     for (const w of wins) {
-      const spec = spectrumOf(absWindow(best.t * 1000 + w.atMs - w.winMs, w.winMs));
+      const spec = spectrumOf(absWindow(tc * 1000 + w.atMs - w.winMs, w.winMs));
       let r = null;
       try {
-        r = judgeNote({
-          spec, sampleRate: SR, fftSize: spec.length * 2,   // 真 FFT 点数（产品页同）
-          expectedMidi: e.expectedMidi, opts: optsFor(e.string, e.fret, e.level),
-        });
+        r = judgeNote({ spec, sampleRate: SR, fftSize: spec.length * 2,
+          expectedMidi: e.expectedMidi, opts: optsFor(e.string, e.fret, e.level) });
       } catch (err) { r = null; }
-      if (r == null) { if (judged == null) { judged = r; usedAt = w.atMs; } continue; }
-      if (judged == null
-          || (r.pass && !judged.pass)
-          || (r.pass === judged.pass && r.fit != null && judged.fit != null
-              && r.fit < judged.fit)) {
-        judged = r;
-        usedAt = w.atMs;
-      }
+      if (r == null) continue;
+      const conf = (job.fitMax == null || (r.fit != null && r.fit <= Number(job.fitMax)))
+        && (job.marginMin == null || (r.margin != null && r.margin >= Number(job.marginMin)));
+      const rec = { r, tc, atMs: w.atMs, ok: !!(r.pass && conf) };
+      if (rec.ok && (bestPass == null || r.fit < bestPass.r.fit)) bestPass = rec;
+      if (bestAny == null || (r.fit != null && (bestAny.r.fit == null || r.fit < bestAny.r.fit))) bestAny = rec;
     }
   }
+  const pick = bestPass || bestAny;
+  if (pick) { judged = pick.r; usedAt = pick.atMs; best.t = pick.tc; }
   results.push({
     ...e,
     tStar: Number(best.t.toFixed(4)),
     rise: Number(best.rise.toFixed(2)),
     pre: Number(best.pre.toFixed(6)),
     post: Number(best.post.toFixed(6)),
-    judged: best.rise >= RISE,
+    judged: !!(bestPass || bestAny),
     // 「这一下算不算过」= 抬头够 + 判定过 + **置信度够**。
     // 为什么要多一道置信度：40ms 的 DFT 在低音弦上分不开半音（F2 87Hz vs F#2 92Hz 只差 5Hz，
     // 而 40ms 窗的主瓣有几十 Hz 宽），所以"期望音的基频带冒头"这条在低音上不特异 ——
     // 实测：六弦写高 1 品的负面靶子上，它把弹成 F2 的那一下判成了 F#2（fit 200 / margin 1.07）。
     // 引擎自己那本账写着"弹对的失配是 118~195"，所以这里给一道**绝对失配**上限；
     // 另给一道 margin 下限（两者都可从外面调，默认只在失配那道门上卡）。
-    pass: !!(judged && judged.pass
-      && (job.fitMax == null || (judged.fit != null && judged.fit <= Number(job.fitMax)))
-      && (job.marginMin == null || (judged.margin != null
-        && judged.margin >= Number(job.marginMin)))),
+    pass: !!bestPass,
     heard: judged && judged.heard != null ? judged.heard : null,
     heardName: judged && judged.heard != null ? midiToName(judged.heard) : null,
     fit: judged && judged.fit != null ? Number(judged.fit.toFixed(0)) : null,
