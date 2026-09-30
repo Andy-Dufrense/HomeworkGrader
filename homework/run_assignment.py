@@ -80,6 +80,25 @@ SEMITONE = 2 ** (1 / 12.0) - 1
 # 分段直线"。学员局部抢先/拖后时，全局直线会把那一小段整体错开一位 →
 # 表现成"漏一个 + 多弹一个"。默认开；写 HG_LOCAL_WARP=0 退回一条全局直线。
 LOCAL_WARP = os.environ.get("HG_LOCAL_WARP", "1") == "1"
+# ── 「安静起音」兜底（2026-09-30，见 复盘-两个项目的坑与阈值口径-2026-09-30.md §6A）──
+# 起音层会漏掉**轻的**拨弦（1 弦尤甚）：上一根弦还在响，整段混音的电平几乎不跳，
+# 而这一下 2kHz 的爆发又不够猛（实测 6415慢速 9.94s：总电平涨 1.12 倍、频带涨 1.25~1.74 倍，
+# 门槛是「陡 1.4」或「频带 2.5」）→ 认不出来 → 配对只能错开一位 → 报告里"漏一个 + 多弹一个"。
+# 我们是后台批改（有谱面 + 已经对好的对齐），可以只在"那一格该响的时刻"补一次复核：
+#   ① 期望音**自己的**基频带在那一处冒了头（真漏是一路衰减，冒不出头）；
+#   ② 判定桥在那一刻判过（窗与 opts 和正常路径完全相同）。
+# 默认开；HG_RESCUE=0 关掉，HG_RESCUE_RISE 换门限（默认 2.5）。
+RESCUE = os.environ.get("HG_RESCUE", "1") == "1"
+RESCUE_RISE = float(os.environ.get("HG_RESCUE_RISE", "2.5"))
+RESCUE_NEAR_MS = 120.0    # 预测时刻附近已经有起音 → 那是配对的选择，不是漏检，不补
+RESCUE_MAX = 12           # 一次批改最多补几格（防跑飞）
+RESCUE_RANGE_MS = float(os.environ.get("HG_RESCUE_RANGE", "250"))
+# 兜底那一下的"置信度"门（引擎自己那本账：弹对的失配 118~195）：
+#   40ms 的 DFT 在低音弦上分不开半音，所以"基频带冒头"这条在低音上不特异 ——
+#   实测六弦写高 1 品的负面靶子上，它会把弹成 F2 的一下判成 F#2（fit 200 / margin 1.07）。
+# 不设 = 不卡（HG_RESCUE_FIT=0 / HG_RESCUE_MARGIN=0）。
+RESCUE_FIT = float(os.environ.get("HG_RESCUE_FIT", "195")) or None
+RESCUE_MARGIN = float(os.environ.get("HG_RESCUE_MARGIN", "0")) or None
 #   0.5 会把"学员局部慢了一下"的音错判成漏（Hey Jude 上实测：漏 3 → 真漏只有 2）；
 #   1.2 又太宽，会把真的漏弹硬配到隔壁起音上（真漏从 2 变 1）。0.8 刚好。
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
@@ -969,6 +988,59 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
             match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset,
                                            preds=preds)
 
+    # ⑤ 「安静起音」兜底（HG_RESCUE=1，默认开）：起音层漏掉的那几下，用"期望音自己的
+    #    基频带冒头"当证据补回来（机制见文件头与 复盘-…-2026-09-30.md §6A）。
+    #    只补"附近没有起音"的格 —— 附近有起音却没配上，那是配对的事，不在这里治。
+    quiet_notes = 0
+    if RESCUE:
+        preds = (local_preds(slots, match, events, scale, offset) if LOCAL_WARP
+                 else [float(sl["t"]) * scale + offset for sl in slots])
+        slices = slot_slices(slots, scale) if WIN_AUTO else None
+        on_t = sorted(float(e["t"]) for e in events)
+        entries, tags = [], []
+        for s in range(len(slots)):
+            if s in match or len(entries) >= RESCUE_MAX:
+                continue
+            if any(abs(t - preds[s]) <= RESCUE_NEAR_MS / 1000.0 for t in on_t):
+                continue
+            multi = len(slots[s]["notes"]) > 1
+            for k, j in enumerate(slots[s]["notes"]):
+                sn = score[j]
+                ent = {"t": round(preds[s], 4), "expectedMidi": int(sn["midi"]),
+                       "string": sn.get("string"), "fret": sn.get("fret"), "level": 0.12}
+                if slices is not None:
+                    ent["wins"] = wins_for(sn["midi"], slices[s], multi)
+                entries.append(ent)
+                tags.append((s, k))
+        if entries:
+            rin = os.path.join(jobdir, "rescue_in.json")
+            rout = os.path.join(jobdir, "rescue_out.json")
+            with io.open(rin, "w", encoding="utf-8") as f:
+                json.dump({"audio": audio, "rise": RESCUE_RISE,
+                           "rangeMs": RESCUE_RANGE_MS,
+                           "fitMax": RESCUE_FIT, "marginMin": RESCUE_MARGIN,
+                           "entries": entries},
+                          f, ensure_ascii=False, indent=1)
+            print(run_node("engine_rescue.mjs", rin, rout).strip())
+            got = {}
+            for (s, k), r in zip(tags, load_json(rout)["results"]):
+                if r.get("pass"):
+                    got.setdefault(s, []).append((k, r))
+            for s in sorted(got):
+                i_syn = len(events)
+                events.append({"t": float(got[s][0][1]["tStar"]), "lv": None, "synth": True})
+                match[s] = i_syn
+                for k, r in got[s]:
+                    index.append((i_syn, s, k))
+                    judged.append({
+                        "t": float(r["tStar"]), "expectedMidi": int(r["expectedMidi"]),
+                        "expectedName": r.get("expectedName"), "string": r.get("string"),
+                        "fret": r.get("fret"), "pass": True, "heard": r.get("heard"),
+                        "heardName": r.get("heardName"), "fit": r.get("fit"),
+                        "margin": r.get("margin"), "atMs": r.get("atMs"), "synth": True,
+                    })
+                    quiet_notes += 1
+
     # 诊断（HG_DEBUG_MATCH=1）：把这一轮"哪一格配到了哪一个起音"落盘，排查"明明判过却报漏"用
     if os.environ.get("HG_DEBUG_MATCH") == "1":
         preds_dbg = (local_preds(slots, match, events, scale, offset) if LOCAL_WARP
@@ -995,6 +1067,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     beats = beat_index_map(score, None)
     rows = []
     weak = 0        # 判定没过、但引擎自己量到的音名就是谱面那个音（见下）
+    quiet = 0       # 起音层漏检、由"安静起音兜底"补回来的音（见 ⑤ 那段）
     matched_notes = 0
     for s, sl in enumerate(slots):
         if s not in match:                      # 这一格整格没配上 → 格里的音全算漏
@@ -1020,6 +1093,9 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
                 continue
             matched_notes += 1
             base["t_audio"] = events[i]["t"]
+            if jd.get("synth"):
+                quiet += 1
+                base["quiet"] = True
             want = note_name(sn["midi"])
             # 收下"判定没通过、但引擎的读数就是谱面这个音"的情况（2026-09-29）：
             #   用户定的 Q13 是"检测到的音名 == 谱面音名就算过"，而这正是引擎自己的读数；
@@ -1054,6 +1130,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
             "slots": len(slots), "multi_slots": multi,
             "extra": len(extra), "hit_window": hits, "candidates": len(pairs),
             "onsets_list": events, "weak_confirmed": weak,
+            "quiet_rescued": quiet,
             "repeat": check_repeat(events, extra, score, scale, offset,
                                    audio, jobdir, band)}
     # 明显停顿：相邻两个"配上的"音，学员这边的间隔比**谱面这一处该有的间隔**长很多。
@@ -1398,6 +1475,9 @@ def main(argv=None):
             process.insert(0, "有 %d 处听着就是谱面那个位置，只是这一下不够实"
                               "（多半是上一个音还在响）—— 这几处算过。"
                            % pinfo["weak_confirmed"])
+        if pinfo.get("quiet_rescued"):
+            process.insert(0, "有 %d 处弹得很轻（机器第一次没认出来，对着谱面复核过）"
+                              "—— 这几处算过。" % pinfo["quiet_rescued"])
         if rep.get("repeat"):
             process.insert(0, "你把作业弹了两遍：第二遍有 %d/%d 个音也对上了。"
                               "作业只需要一遍，多出来的第二遍没算进分数。"
