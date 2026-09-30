@@ -99,7 +99,7 @@ LOCAL_WARP = os.environ.get("HG_LOCAL_WARP", "1") == "1"
 # 正规的走法只有一个：**用起音层自己的判据**回答"这里有没有新拨一下"（与音高无关），
 # 而那几个被漏掉的拨弦现在是**被起音层的阈值挡掉的**（实测：电平只涨 1.12 倍、2kHz 频带只涨
 # 1.25~1.74 倍，而门槛是 1.4 / 2.5）→ 只能扫这个阈值、两边数字给用户挑（Q15 的流程）。
-RESCUE = os.environ.get("HG_RESCUE", "0") == "1"
+RESCUE = os.environ.get("HG_RESCUE", "1") == "1"
 RESCUE_MODE = os.environ.get("HG_RESCUE_MODE", "onset")   # onset(位置驱动重听) / band(已否掉，只留档)
 RESCUE_RISE = float(os.environ.get("HG_RESCUE_RISE", "2.5"))
 RESCUE_NEAR_MS = float(os.environ.get("HG_RESCUE_NEAR", "60"))  # 附近已经有起音 → 那是配对的选择，不是漏检，不补

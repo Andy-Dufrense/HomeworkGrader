@@ -129,6 +129,49 @@ function optsFor(string, fret, level) {
 }
 
 const results = [];
+// ── 一次**整段回放**：地板/门限状态机与 engine_bridge.mjs 逐字相同 ──────────────
+// 为什么要整段跑：floor 是有状态的（前 30 帧建底、之后"只降不升"），
+// 只截一小段算出来的门限和实时对不上 —— 上一版就是死在这里。
+// 放松的只有**阈值**（同一个 decideOnset、同一套测量函数，Q15/Q29 不破引擎）。
+const REL_HF = Number(process.env.HG_REL_HF || 1.5);   // 扫表定：1.5 就够，1.2 没多出来
+const REL_LOW = Number(process.env.HG_REL_LOW || 1.0);
+const REL_RISE = Number(process.env.HG_REL_RISE || 1.15);
+const REL_GATE = Number(process.env.HG_REL_GATE || 0.6);
+resetAnalysis();
+let _floor = 0.001, _frames = 0, _onsetMs = -1e9, _refr = -1e9;
+const _hist = [];
+const frameInfo = [];       // { t, lv, gate, strict, relaxed, why }
+for (let t = 0; t < (AUDIO.length / SR) * 1000; t += HOP) {
+  const buf = frameEndingAt(t);
+  const lv = rmsOf(buf, buf.length - 1024, 1024);
+  _frames++;
+  if (_frames <= 30) _floor += (Math.min(lv, 0.05) * 0.9 - _floor) * 0.3;
+  else if (lv < _floor) _floor = _floor * 0.9 + lv * 0.1;
+  else _floor = Math.min(_floor * 1.0003 + 1e-7, 0.06);
+  _floor = Math.max(_floor, 0.0005);
+  const gate = Math.max(CFG.absFloor, _floor * CFG.onsetSensitivity);
+  const prevLv = _hist.length ? _hist[_hist.length - 1] : 0;
+  const lagged = _hist.length >= 3 ? _hist[_hist.length - 3] : 0;
+  const flux = fluxRelOf(buf), hfFlux = hfFluxRelOf(buf);
+  const hfBand = hfBandRiseOf(buf), lowBand = lowBandRiseOf(buf);
+  const shape = shapeFluxOf(buf);
+  const strict = decideOnset({
+    phase: 'waiting', now: t, refractoryUntilMs: _refr, lastOnsetMs: _onsetMs,
+    minGapCfg: CFG.minGapMs, lv, prevLv, lagged, gate, floor: _floor,
+    flux, hfFlux, hfBandRise: hfBand, lowBandRise: lowBand, shapeFlux: shape,
+    repeatSame: false,
+  }).onset;
+  const relaxed = lv > Math.max(0.05, gate * REL_GATE)
+    && hfBand > REL_HF && lowBand > REL_LOW && lv > lagged * REL_RISE
+    && shape > 0.02;
+  frameInfo.push({ t: t / 1000, lv, gate, lagged, hfBand, lowBand, flux, shape, strict, relaxed });
+  _hist.push(lv);
+  if (_hist.length > 10) _hist.shift();
+  if (strict) { _refr = t + 110; _onsetMs = t; }
+}
+console.log(`整段回放：${frameInfo.length} 帧 ｜ 严格判据认了 ${frameInfo.filter((f) => f.strict).length} 次`
+  + ` ｜ 放松判据(${REL_HF}/${REL_LOW}/${REL_RISE}) 认了 ${frameInfo.filter((f) => f.relaxed).length} 次`);
+
 for (const e of (job.entries || [])) {
   const f0 = 440 * Math.pow(2, (Number(e.expectedMidi) - 69) / 12);
   // 两套判据（`mode`）：默认 band（下面这版，已验证的数字最好），
@@ -169,6 +212,16 @@ for (const e of (job.entries || [])) {
   // 只可能在它前后两格之间）；没给才退回"预测时刻 ± 时间片/2"。
   const T0 = Math.max(0, e.winFrom != null ? Number(e.winFrom) * 1000 : e.t * 1000 - half);
   const T1 = e.winTo != null ? Number(e.winTo) * 1000 : e.t * 1000 + half;
+  // 用整段回放里那些"放松判据认了"的帧（floor/gate 与实时一致）
+  for (const f of frameInfo) {
+    const tms = f.t * 1000;
+    if (tms < T0 || tms > T1 || !f.relaxed) continue;
+    const rise = f.lv / Math.max(f.lagged, 1e-9);
+    if (rise > best.rise) {
+      best = { t: f.t, rise, pre: f.lagged, post: f.lv, ok: true,
+               why: `放松判据：电平 ${f.lv.toFixed(3)}(抬 ${rise.toFixed(2)}×) 频带 ${f.hfBand.toFixed(2)}×` };
+    }
+  }
   const lvAt = (tMs) => {
     const buf = frameEndingAt(tMs);
     return rmsOf(buf, buf.length - 1024, 1024);
@@ -202,7 +255,7 @@ for (const e of (job.entries || [])) {
     ? e.wins.map((x) => ({ atMs: Number(x.atMs), winMs: Number(x.winMs) }))
     : [{ atMs: 90, winMs: (8192 / SR) * 1000 }];
   let judged = null, usedAt = wins[0].atMs;
-  if (best.rise >= RISE) {
+  if (best.ok === true || best.rise >= RISE) {
     // 逐扇窗都判一遍，取**最有把握**的那一扇：先要"过"，同是"过"就取失配更小的。
     // （正常路径是"有一扇过就算过"—— 那是给实时/连续音用的；这里是**事后补判**，
     //   宁可挑证据最硬的那扇窗，也不要"碰巧过"。）
