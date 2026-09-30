@@ -133,7 +133,7 @@ for (const e of (job.entries || [])) {
   const f0 = 440 * Math.pow(2, (Number(e.expectedMidi) - 69) / 12);
   // 两套判据（`mode`）：默认 band（下面这版，已验证的数字最好），
   // onset = 用引擎自己的起音判据重听（用户 2026-09-30 提的方向，见上面注释；还没调准，默认不用）。
-  const MODE = job.mode === 'onset' ? 'onset' : 'band';
+  const MODE = job.mode === 'band' ? 'band' : 'onset';
   let best = { t: e.t, rise: 0, pre: 0, post: 0, why: '没找到新起音' };
   if (MODE === 'band') {
     // 期望音自己那条线：从**前面 150ms 内的低谷**抬起了多少倍。
@@ -157,8 +157,18 @@ for (const e of (job.entries || [])) {
   //   余响只会往下走、不会抬头。所以这里把起音层的 `decideOnset` 原样搬过来，
   //   只把"冷却/最小时距"放开（我们是事后重听，不是实时排队），
   //   在**这一格自己的时间片**里逐帧问一遍。
-  const T0 = Math.max(0, e.t * 1000 - SCAN_RANGE_MS);
-  const T1 = e.t * 1000 + SCAN_RANGE_MS;
+  // 位置驱动（用户 2026-09-30 的定调）：后台知道谱子 —— 哪一格是低音、哪一格是 1 弦、
+  // 哪一格本来就不稳，就用**针对这一格自己的策略**；而且代价结构不同：
+  //   实时多认一次起音 = 吃掉一个音符槽（灾难）；
+  //   后台多认一次 = 多判一次，判不过就还是"漏/错"，不会冤枉人。
+  // 所以这里把阈值放松，但**证据仍然与音高无关**（电平/通量/频带抬头/形状），
+  // 而且搜索范围就是**这一格自己的时间片**（sliceMs），不会跑到隔壁那一音上。
+  const REL = { sharp: 1.15, hfBand: 1.5, lowBand: 1.0, flux: 0.18 };
+  const half = SCAN_RANGE_MS;   // 预测时刻 ±250ms（实测这一档两边数字最好）
+  // 搜索范围优先用调用方给的"夹在两旁起音之间"那一段（后台知道谱面顺序 → 漏掉的那一下
+  // 只可能在它前后两格之间）；没给才退回"预测时刻 ± 时间片/2"。
+  const T0 = Math.max(0, e.winFrom != null ? Number(e.winFrom) * 1000 : e.t * 1000 - half);
+  const T1 = e.winTo != null ? Number(e.winTo) * 1000 : e.t * 1000 + half;
   const lvAt = (tMs) => {
     const buf = frameEndingAt(tMs);
     return rmsOf(buf, buf.length - 1024, 1024);
@@ -173,14 +183,16 @@ for (const e of (job.entries || [])) {
     for (let u = t - 1000; u <= t - 150; u += 50) floor = Math.min(floor, lvAt(u));
     floor = Math.max(floor, 0.0005);
     const gate = Math.max(CFG.absFloor, floor * CFG.onsetSensitivity);
-    const g = decideOnset({
-      phase: 'waiting', now: t, refractoryUntilMs: -1e9, lastOnsetMs: -1e9,
-      minGapCfg: 0, lv, prevLv, lagged, gate, floor,
-      flux: fluxRelOf(buf), hfFlux: hfFluxRelOf(buf),
-      hfBandRise: hfBandRiseOf(buf), lowBandRise: lowBandRiseOf(buf),
-      shapeFlux: shapeFluxOf(buf), repeatSame: false,
-    });
-    if (!g.onset) continue;
+    const flux = fluxRelOf(buf), hfFlux = hfFluxRelOf(buf);
+    const hfBand = hfBandRiseOf(buf), lowBand = lowBandRiseOf(buf);
+    const shape = shapeFluxOf(buf);
+    const enough = lv > Math.max(0.05, gate * 0.6)
+      && ((hfBand > REL.hfBand && lowBand > REL.lowBand && lv > lagged * REL.sharp)
+        || lv > lagged * 1.4
+        || (flux > REL.flux && lv > lagged * 1.1))
+      && shape > 0.02;
+    if (!enough) continue;
+    const g = { onset: true };
     // 还要满足"它是在下降之后抬起来的"：比 150ms 前高
     const rise = lv / Math.max(lvBack, 1e-9);
     if (rise > best.rise) best = { t: t / 1000, rise, pre: lvBack, post: lv, why: '起音层判据认为有新拨' };
