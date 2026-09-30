@@ -107,13 +107,23 @@ function optsFor(string, fret, level) {
 const results = [];
 for (const e of (job.entries || [])) {
   const f0 = 440 * Math.pow(2, (Number(e.expectedMidi) - 69) / 12);
+  // 沿着时间轴把"期望音自己那条线"的能量铺开（40ms 窗、10ms 步），
+  // 再看每个候选时刻**从它前面 150ms 内的低谷抬起了多少倍**。
+  // 为什么不用"比固定 60ms 前"：那条线常常还被上一根弦的某个谐波垫着
+  //（六弦三品 196Hz 正好是六弦三品?? 不 —— 是三弦空弦 196Hz 被上一个 T 的 2 次谐波垫着），
+  // 固定基准会把"真弹"的比值压到 1.6 左右；而**新起一下一定是从谷里抬起来的**。
+  const T0 = e.t * 1000 - (SCAN_RANGE_MS + 200);
+  const T1 = e.t * 1000 + SCAN_RANGE_MS;
+  const series = [];
+  for (let t = T0; t <= T1; t += 10) series.push({ t, v: bandMag(t, f0) });
   let best = { t: e.t, rise: 0, pre: 0, post: 0 };
-  for (let d = -SCAN_RANGE_MS; d <= SCAN_RANGE_MS; d += SCAN_STEP_MS) {
-    const t = e.t * 1000 + d;                        // ms
-    const post = bandMag(t, f0);
-    const pre = bandMag(t - SCAN_WIN_MS - SCAN_PRE_GAP_MS, f0);
-    const rise = post / Math.max(pre, 1e-9);
-    if (rise > best.rise) best = { t: t / 1000, rise, pre, post };
+  for (let k = 2; k < series.length; k++) {
+    const t = series[k].t;
+    if (Math.abs(t - e.t * 1000) > SCAN_RANGE_MS) continue;
+    let lo = Infinity;
+    for (let j = Math.max(0, k - 15); j <= k - 2; j++) lo = Math.min(lo, series[j].v);
+    const rise = series[k].v / Math.max(lo, 1e-9);
+    if (rise > best.rise) best = { t: t / 1000, rise, pre: lo, post: series[k].v };
   }
   const wins = (e.wins && e.wins.length)
     ? e.wins.map((x) => ({ atMs: Number(x.atMs), winMs: Number(x.winMs) }))

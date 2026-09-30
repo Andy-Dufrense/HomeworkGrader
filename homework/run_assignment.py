@@ -94,7 +94,7 @@ LOCAL_WARP = os.environ.get("HG_LOCAL_WARP", "1") == "1"
 # 默认开；HG_RESCUE=0 关掉，HG_RESCUE_RISE 换门限（默认 2.5）。
 RESCUE = os.environ.get("HG_RESCUE", "1") == "1"
 RESCUE_RISE = float(os.environ.get("HG_RESCUE_RISE", "2.5"))
-RESCUE_NEAR_MS = 120.0    # 预测时刻附近已经有起音 → 那是配对的选择，不是漏检，不补
+RESCUE_NEAR_MS = float(os.environ.get("HG_RESCUE_NEAR", "60"))  # 附近已经有起音 → 那是配对的选择，不是漏检，不补
 RESCUE_MAX = 12           # 一次批改最多补几格（防跑飞）
 RESCUE_RANGE_MS = float(os.environ.get("HG_RESCUE_RANGE", "250"))
 # 兜底那一下的"置信度"门（引擎自己那本账：弹对的失配 118~195）：
