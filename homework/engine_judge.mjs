@@ -36,6 +36,14 @@ const WIN_MS = 8192 / SR * 1000; // 170.67ms
 // 六弦一个半音只有 5Hz，于是低音弦被读成邻居 —— 这就是"隔壁实时都没有、我们有"的真因。
 // 诊断开关：HG_FFT_MAGS=1 退回老写法（复现问题用）。
 const FFT_MAGS = process.env.HG_FFT_MAGS === '1';
+// 判定时要不要多试一档"只判新起来的那部分"（用户的起音思路，见 risingSpec）。
+// ⚠ 默认**关**：实测它当"判定输入"会把负面证据也一起压小 ——
+//   错谱靶子 75 → 92、六弦写高1品 90 → 92/95（两种写法都试过），
+//   跟隔壁 9-24 记的"差分谱当判定输入 → 错音过得更松"是同一个机制。
+//   它只适合当"这一下有没有新拨"的**证据**（起音层做的就是这个），不能替代判定。
+//   要看数字：HG_RISING=1（可选 HG_RISING_MODE=mask|diff，默认 mask）。
+const RISING_ON = process.env.HG_RISING === '1';
+const RISING_MODE = process.env.HG_RISING_MODE || 'mask';
 // 多音格（同一格≥2根弦）可以单独指定"起音后多久判"：小琶音三根弦相隔约 100ms，
 // 只在 90ms 判会读到"第三根还没响"的谱（2026-09-30 实测：9 11 11 那条 8/12 → 170ms 12/12）。
 // 单音格不给这个键，就是上面的 90ms，行为与以前一字不差。
@@ -67,6 +75,38 @@ function absWindow(fromMs, lenMs) {
   for (let i = 0; i < n; i++) {
     const j = start + i;
     out[i] = (j >= 0 && j < AUDIO.length) ? AUDIO[j] : 0;
+  }
+  return out;
+}
+
+function padTo(buf, n) {
+  const o = new Float32Array(n);
+  o.set(buf.subarray(0, Math.min(buf.length, n)));
+  return o;
+}
+
+// ── 只判"这一下新起来的"那部分（用户的起音思路，2026-09-30 用户重申）─────────
+// 用户原话：「上一个音此时在减弱，新起的音正在长到峰值并开始减弱，我们只对这个新起音判断」。
+// 做法：pre = [起音−40ms, 起音−10ms]、post = [起音+10ms, 起音+40ms]（中间留 10ms 空档避开
+// 起音瞬态那一下的宽带噪声），两边都**零填充到 8192** 保证低音弦的分辨率，
+// 逐频点相减、**只留正的那部分**（在减弱的余响永远是负的 → 被抹掉）。
+// 于是判定输入里"只剩这一下新加进来的东西"：上一个音的和弦余响不再参与候选比较。
+const DIFF_PRE_FROM = -40, DIFF_PRE_LEN = 30;
+const DIFF_POST_FROM = 10, DIFF_POST_LEN = 30;
+function risingSpec(tMs) {
+  const post = spectrumOf(padTo(absWindow(tMs + DIFF_POST_FROM, DIFF_POST_LEN), 8192));
+  const pre = spectrumOf(padTo(absWindow(tMs + DIFF_PRE_FROM, DIFF_PRE_LEN), 8192));
+  const out = new Float32Array(post.length);
+  for (let i = 0; i < post.length; i++) {
+    // 两种写法（HG_RISING_MODE）：
+    //   "diff" = 只留增量（post−pre）；
+    //   "mask" = 在涨的那些频点留**完整的 post 值**（结构不被压扁）——
+    //            用户的"只判新起音那部分"更贴近这个：减弱的（post<pre）一律抹掉。
+    //            实测 "diff" 会把负证据也一起压小（六弦写高1品那个负面靶子从 错3 掉到 错1），
+    //            跟隔壁 9-24 记的"差分谱当判定输入 → 错音过得更松"是同一个机制。
+    out[i] = RISING_MODE === 'mask'
+      ? (post[i] > pre[i] ? post[i] : 0)
+      : (post[i] - pre[i] > 0 ? post[i] - pre[i] : 0);
   }
   return out;
 }
@@ -107,11 +147,18 @@ for (const p of job.pairs) {
     : ((p.atMsList && p.atMsList.length)
       ? p.atMsList.map((a) => ({ atMs: Number(a), winMs: defWinMs }))
       : [{ atMs: p.atMs != null ? Number(p.atMs) : JUDGE_AT_MS, winMs: defWinMs }]);
-  let r = null, usedAt = wins[0].atMs;
+  // "只判新起来的那部分"那一档（用户的起音思路）：放在最后再试一次
+  const attempts = wins.map((w) => ({ atMs: w.atMs, winMs: w.winMs, rising: false }));
+  if (RISING_ON && p.rising !== false && p.t != null) {
+    attempts.push({ atMs: JUDGE_AT_MS, winMs: 0, rising: true });
+  }
+  let r = null, usedAt = attempts[0].atMs;
   let lastSpec = null;          // 诊断（HG_READ）用：最后一扇窗的频谱
-  for (const w of wins) {
+  for (const w of attempts) {
     const atMs = w.atMs, winMs = w.winMs;
-    const spec = spectrumOf(absWindow(p.t * 1000 + atMs - winMs, winMs));
+    const spec = w.rising
+      ? risingSpec(p.t * 1000)
+      : spectrumOf(absWindow(p.t * 1000 + atMs - winMs, winMs));
     lastSpec = spec;
     let res = null;
     try {
