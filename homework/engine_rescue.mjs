@@ -29,8 +29,15 @@ import path from 'node:path';
 const M = 'file:///E:/GuitarFollowLab/backend/engine/';
 const { judgeNote } = await import(M + 'judger.js');
 const { spectrumOf, midiToName } = await import(M + 'dsp.js');
+// 起音那一路：**用引擎自己的判据**回答"这里有没有新拨一下"（用户 2026-09-30：
+// 「不能只看音高判断起音，也要看他的声音是不是在下降，是不是没到阈值啊，这都是之前做过的」）
+const { decideOnset } = await import(M + 'onset.js');
+const { fluxRelOf, hfFluxRelOf, hfBandRiseOf, lowBandRiseOf, shapeFluxOf, resetAnalysis } =
+  await import(M + 'analysis.js');
+const { CFG, CAPTURE } = await import(M + 'config.js');
 
 const SR = 48000;
+const HOP = 16;                 // 起音层是 16ms 一帧（和页面/桥一致）
 const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
 
 // 找位置用的窗：40ms（1920 点）。**不用 8192**：那扇窗会把"冒头"抹平（170ms 里
@@ -90,6 +97,23 @@ function absWindow(fromMs, lenMs) {
   return out;
 }
 
+function frameEndingAt(tMs) {        // 和页面/桥同一取样方式：**最近 CAPTURE 个采样**
+  const end = Math.floor((tMs / 1000) * SR);
+  const from = Math.max(0, end - CAPTURE);
+  const buf = new Float32Array(CAPTURE);
+  for (let i = 0; i < CAPTURE; i++) {
+    const j = from + i;
+    buf[i] = (j >= 0 && j < AUDIO.length) ? AUDIO[j] : 0;
+  }
+  return buf;
+}
+
+function rmsOf(a, from, n) {
+  let s = 0;
+  for (let i = 0; i < n; i++) { const v = a[from + i]; s += v * v; }
+  return Math.sqrt(s / n);
+}
+
 function optsFor(string, fret, level) {
   const lv = level == null ? 0.12 : level;
   if (string == null) return { maxOffset: null, bandLo: 0, bandHi: 0 };
@@ -107,23 +131,60 @@ function optsFor(string, fret, level) {
 const results = [];
 for (const e of (job.entries || [])) {
   const f0 = 440 * Math.pow(2, (Number(e.expectedMidi) - 69) / 12);
-  // 沿着时间轴把"期望音自己那条线"的能量铺开（40ms 窗、10ms 步），
-  // 再看每个候选时刻**从它前面 150ms 内的低谷抬起了多少倍**。
-  // 为什么不用"比固定 60ms 前"：那条线常常还被上一根弦的某个谐波垫着
-  //（六弦三品 196Hz 正好是六弦三品?? 不 —— 是三弦空弦 196Hz 被上一个 T 的 2 次谐波垫着），
-  // 固定基准会把"真弹"的比值压到 1.6 左右；而**新起一下一定是从谷里抬起来的**。
-  const T0 = e.t * 1000 - (SCAN_RANGE_MS + 200);
+  // 两套判据（`mode`）：默认 band（下面这版，已验证的数字最好），
+  // onset = 用引擎自己的起音判据重听（用户 2026-09-30 提的方向，见上面注释；还没调准，默认不用）。
+  const MODE = job.mode === 'onset' ? 'onset' : 'band';
+  let best = { t: e.t, rise: 0, pre: 0, post: 0, why: '没找到新起音' };
+  if (MODE === 'band') {
+    // 期望音自己那条线：从**前面 150ms 内的低谷**抬起了多少倍。
+    const T0 = e.t * 1000 - (SCAN_RANGE_MS + 200);
+    const T1 = e.t * 1000 + SCAN_RANGE_MS;
+    const series = [];
+    for (let t = T0; t <= T1; t += 10) series.push({ t, v: bandMag(t, f0) });
+    for (let k = 2; k < series.length; k++) {
+      const t = series[k].t;
+      if (Math.abs(t - e.t * 1000) > SCAN_RANGE_MS) continue;
+      let lo = Infinity;
+      for (let j = Math.max(0, k - 15); j <= k - 2; j++) lo = Math.min(lo, series[j].v);
+      const rise = series[k].v / Math.max(lo, 1e-9);
+      if (rise > best.rise) best = { t: t / 1000, rise, pre: lo, post: series[k].v, why: '本音那条线从低谷抬起' };
+    }
+  } else {
+  // 「这一格该响的时刻附近，**有没有新拨一下**」——用引擎自己的起音判据重听一遍。
+  // 为什么不能拿"期望音那条线在不在"当判据（用户 2026-09-30 纠正）：
+  //   上一根同音还在响时，那条线一直在（只是**在下降**），按音高看会误判成"弹了"。
+  //   起音层回答的是另一个问题：**有没有一次新的拨弦动作**（电平/瞬态/频带抬头），
+  //   余响只会往下走、不会抬头。所以这里把起音层的 `decideOnset` 原样搬过来，
+  //   只把"冷却/最小时距"放开（我们是事后重听，不是实时排队），
+  //   在**这一格自己的时间片**里逐帧问一遍。
+  const T0 = Math.max(0, e.t * 1000 - SCAN_RANGE_MS);
   const T1 = e.t * 1000 + SCAN_RANGE_MS;
-  const series = [];
-  for (let t = T0; t <= T1; t += 10) series.push({ t, v: bandMag(t, f0) });
-  let best = { t: e.t, rise: 0, pre: 0, post: 0 };
-  for (let k = 2; k < series.length; k++) {
-    const t = series[k].t;
-    if (Math.abs(t - e.t * 1000) > SCAN_RANGE_MS) continue;
-    let lo = Infinity;
-    for (let j = Math.max(0, k - 15); j <= k - 2; j++) lo = Math.min(lo, series[j].v);
-    const rise = series[k].v / Math.max(lo, 1e-9);
-    if (rise > best.rise) best = { t: t / 1000, rise, pre: lo, post: series[k].v };
+  const lvAt = (tMs) => {
+    const buf = frameEndingAt(tMs);
+    return rmsOf(buf, buf.length - 1024, 1024);
+  };
+  for (let t = T0; t <= T1; t += HOP) {
+    const buf = frameEndingAt(t);
+    const lv = rmsOf(buf, buf.length - 1024, 1024);
+    const prevLv = lvAt(t - HOP), lagged = lvAt(t - 3 * HOP);
+    const lvBack = lvAt(t - 150);
+    // 本地地板：最近 1 秒里最安静的那一段（找不到就退回 CFG.absFloor）
+    let floor = 0.001;
+    for (let u = t - 1000; u <= t - 150; u += 50) floor = Math.min(floor, lvAt(u));
+    floor = Math.max(floor, 0.0005);
+    const gate = Math.max(CFG.absFloor, floor * CFG.onsetSensitivity);
+    const g = decideOnset({
+      phase: 'waiting', now: t, refractoryUntilMs: -1e9, lastOnsetMs: -1e9,
+      minGapCfg: 0, lv, prevLv, lagged, gate, floor,
+      flux: fluxRelOf(buf), hfFlux: hfFluxRelOf(buf),
+      hfBandRise: hfBandRiseOf(buf), lowBandRise: lowBandRiseOf(buf),
+      shapeFlux: shapeFluxOf(buf), repeatSame: false,
+    });
+    if (!g.onset) continue;
+    // 还要满足"它是在下降之后抬起来的"：比 150ms 前高
+    const rise = lv / Math.max(lvBack, 1e-9);
+    if (rise > best.rise) best = { t: t / 1000, rise, pre: lvBack, post: lv, why: '起音层判据认为有新拨' };
+  }
   }
   const wins = (e.wins && e.wins.length)
     ? e.wins.map((x) => ({ atMs: Number(x.atMs), winMs: Number(x.winMs) }))
