@@ -32,6 +32,10 @@ const WIN_MS = 8192 / SR * 1000; // 170.67ms
 // 六根弦的空弦音高（产品页 judge-loop.js 里的同一张表）
 const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
 
+// 扫阈值用（不设就是照抄产品页/引擎的默认值）
+const RIVAL_MARGIN = process.env.HG_RIVAL_MARGIN ? Number(process.env.HG_RIVAL_MARGIN) : null;
+const FIT_MAX = process.env.HG_FIT_MAX ? Number(process.env.HG_FIT_MAX) : null;
+
 const inPath = process.argv[2];
 const outPath = process.argv[3];
 if (!inPath || !outPath) {
@@ -57,13 +61,19 @@ function absWindow(fromMs, lenMs) {
 // 和产品页同一套 opts（见 judge-loop.js 里 judgeNote 的调用处）
 function optsFor(string, fret, level) {
   const lv = level == null ? 0.12 : level;
-  if (string == null) return { maxOffset: null, bandLo: 0, bandHi: 0 };
+  if (string == null) return { maxOffset: null, bandLo: 0, bandHi: 0,
+    fitMax: FIT_MAX != null ? FIT_MAX : undefined };
   const open = OPEN[string];
   if (!open) return { maxOffset: 2, bandLo: 0, bandHi: 0 };
   const o = 440 * Math.pow(2, (open - 69) / 12);
   return {
     maxOffset: 2,
-    rivalMargin: (lv >= 0.10 ? 1.05 : 0.90),
+    // 响的那一档 1.05 → **0.95**（2026-09-30 扫表定的，见本文件开头注释与 思路.md §11.10）：
+    //   1.05 时低音弦（F2/G2/A2）"本音只领先邻居一点点"就被判错；0.95 仍然要求
+    //   本音领先对手，且**故意写错一个音的靶子照样报错**（75 分）。
+    //   轻的那一档是产品页的 0.90，不动。
+    rivalMargin: RIVAL_MARGIN != null ? RIVAL_MARGIN : (lv >= 0.10 ? 0.95 : 0.90),
+    fitMax: FIT_MAX != null ? FIT_MAX : undefined,
     bandLo: o * Math.pow(2, -1 / 12),
     bandHi: o * Math.pow(2, 25 / 12),
   };
