@@ -73,6 +73,10 @@ WIN_AUTO = os.environ.get("HG_WIN_AUTO", "1") == "1"
 WIN_KAPPA = float(os.environ.get("HG_WIN_KAPPA", "0.25"))
 WIN_MIN_MS = float(os.environ.get("HG_WIN_MIN", "170.67"))   # 产品页那扇窗（8192/48k）
 WIN_MAX_MS = float(os.environ.get("HG_WIN_MAX", "683"))      # 12k 下 8192 点
+# 低音长窗要不要被"这个音自己的时间片"封顶（默认要）。写 0 = 只按 WIN_MAX 封顶。
+# 用途：六弦三品那种"半音只差 5~12Hz、又被上一个和弦盖住"的音，
+# 只有 683ms 那扇窗才读得出来（实测 fit 185），而它的时间片只有 0.45s 会被封掉。
+WIN_SLICE_CAP = os.environ.get("HG_WIN_SLICE", "1") == "1"
 JUDGE_AT_MS = 90.0          # 产品页：起音后 90ms 出结论
 WIN_START_MS = 30.0         # 长窗从起音后 30ms 开始（跟弹那边"稳定段 30~170ms"）
 SEMITONE = 2 ** (1 / 12.0) - 1
@@ -675,7 +679,7 @@ def win_ms_for(midi, slice_sec):
     """这一格的判定窗长（毫秒）：min(分辨需要的长度, 时间片)，夹在 [WIN_MIN, WIN_MAX]。"""
     f0 = 440.0 * (2 ** ((int(midi) - 69) / 12.0))
     need_ms = 1000.0 / (WIN_KAPPA * f0 * SEMITONE)
-    win = min(need_ms, max(0.0, slice_sec) * 1000.0)
+    win = need_ms if not WIN_SLICE_CAP else min(need_ms, max(0.0, slice_sec) * 1000.0)
     return round(min(max(win, WIN_MIN_MS), WIN_MAX_MS), 1)
 
 
@@ -684,12 +688,23 @@ def wins_for(midi, slice_sec, multi=False):
 
     默认是产品页那一扇（多音格再等一格：90ms 和 170ms）；
     这个音需要更长的窗（低音弦）时，再加一扇"贴在它自己时间片里"的长窗。
+    再往下：低音弦那种"半音只差 5~12Hz、又被上一个和弦盖住"的音，
+    还需要一扇**从稳定段起算**的长窗（起音 +90ms 起、最长到 WIN_MAX）——
+    实测六弦三品那一下：时间片封顶的 450ms 窗读不出来（fit 279），
+    而 [起音+90ms, +90ms+683ms] 那扇读得出来（fit 141 / margin 1.37）。
+    为什么起点要从 +30ms 挪到 +90ms：+30ms 那会儿起音瞬态和上一个音的余响都还在最高处。
     """
     wins = [{"atMs": a, "winMs": WIN_MIN_MS}
             for a in (JUDGE_AT_MULTI_MS if multi else [JUDGE_AT_MS])]
+    f0 = 440.0 * (2 ** ((int(midi) - 69) / 12.0))
+    need_ms = 1000.0 / (WIN_KAPPA * f0 * SEMITONE)
     w = win_ms_for(midi, slice_sec)
     if w > WIN_MIN_MS + 1:
         wins.append({"atMs": WIN_START_MS + w, "winMs": w})
+    # 低音弦再来一扇"稳定段长窗"（时间片封顶之外的备份；不影响单音/高音）
+    if need_ms > w + 1:
+        w2 = min(max(need_ms, WIN_MIN_MS), WIN_MAX_MS)
+        wins.append({"atMs": JUDGE_AT_MS + w2, "winMs": w2})
     return wins
 
 
