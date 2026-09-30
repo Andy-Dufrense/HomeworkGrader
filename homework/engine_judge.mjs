@@ -35,6 +35,8 @@ const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
 // 扫阈值用（不设就是照抄产品页/引擎的默认值）
 const RIVAL_MARGIN = process.env.HG_RIVAL_MARGIN ? Number(process.env.HG_RIVAL_MARGIN) : null;
 const FIT_MAX = process.env.HG_FIT_MAX ? Number(process.env.HG_FIT_MAX) : null;
+// 诊断用：判定窗长度（毫秒）。默认 8192/48k = 170.67ms。低音弦要更长的窗才分得出半音。
+const WIN_OVERRIDE = process.env.HG_WIN_MS ? Number(process.env.HG_WIN_MS) : null;
 
 const inPath = process.argv[2];
 const outPath = process.argv[3];
@@ -88,7 +90,9 @@ for (const p of job.pairs) {
     : [p.atMs != null ? Number(p.atMs) : JUDGE_AT_MS];
   let r = null, usedAt = ats[0];
   for (const atMs of ats) {
-    const spec = spectrumOf(absWindow(p.t * 1000 + atMs - WIN_MS, WIN_MS));
+    const winMs = p.winMs != null ? Number(p.winMs)
+      : (WIN_OVERRIDE != null ? WIN_OVERRIDE : WIN_MS);
+    const spec = spectrumOf(absWindow(p.t * 1000 + atMs - winMs, winMs));
     let one = null;
     try {
       one = judgeNote({
