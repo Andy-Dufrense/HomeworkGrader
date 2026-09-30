@@ -130,6 +130,22 @@ def main():
         checks.append(("结果页：错音在谱面上框出来了", marks_ok))
         checks.append(("结果页：没横向溢出",
                        page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")))
+        # 交完之后还能不能再交一次（用户 2026-09-30 报的两条里的第 1 条）：
+        # 提交时把键 disable 了，成功的分支忘了恢复 → 出完报告那颗钮一直是灰的；
+        # 报告页那颗「再交一次」也没挂处理器。两条一起盯住。
+        checks.append(("报告页：提交键还能用（再交一次）",
+                       page.eval_on_selector('#submit', 'el => el.disabled') is False))
+        page.click('#again')
+        page.wait_for_timeout(400)
+        back = page.evaluate("""() => ({
+          result: document.getElementById('resultCard').hidden,
+          step: document.querySelector('.step.is-on').dataset.step,
+          submit: document.getElementById('submit').disabled,
+          file: document.getElementById('chosen').hidden,
+        })""")
+        checks.append(("报告页：点「再交一次」回到第 1 步（文件还在）",
+                       back["result"] and back["step"] == '1'
+                       and back["submit"] is False and back["file"] is False))
 
         # 汇报用：桌面/投屏宽度再来一张（只出图，不加断言）
         desk = browser.new_page(viewport={"width": 1280, "height": 900})

@@ -23,6 +23,7 @@ const el = {
   facts: $('facts'), source: $('source'), tips: $('tips'),
   drop: $('drop'), file: $('file'), chosen: $('chosen'), chosenName: $('chosenName'),
   clearFile: $('clearFile'),
+  uploadCard: $('uploadCard'),
   submit: $('submit'), submitHint: $('submitHint'),
   progressCard: $('progressCard'), bar: $('bar'), stage: $('stage'), pipe: $('pipe'),
   resultCard: $('resultCard'), reportMeta: $('reportMeta'),
@@ -345,6 +346,16 @@ el.submit.addEventListener('click', async () => {
   }
 });
 
+// 「再交一次」（报告页底部那颗钮）：回到第 1 步，**保留刚才选的文件**，
+// 想换就点输入框里的"重新选择"。以前这颗钮没挂处理器 —— 点了没反应（用户 2026-09-30 报的）。
+el.again.addEventListener('click', () => {
+  show(el.resultCard, false);
+  show(el.progressCard, false);
+  goStep(1);
+  refreshSubmit();                     // 选中的文件还在 → 提交键立刻可用
+  if (el.uploadCard) el.uploadCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
 function markPipe(i) {
   [...el.pipe.children].forEach((li, k) => {
     li.classList.toggle('is-done', k < i);
@@ -362,6 +373,9 @@ function poll(id) {
     if (t.status === 'completed') {
       clearInterval(pollTimer);
       show(el.progressCard, false);
+      // 批改跑完要把提交键放回来（2026-09-30 用户报"交完作业之后再交一次的按钮点不了"：
+      // 提交时 disable 了它，只有失败分支才恢复，成功的分支忘了恢复 → 出完报告它就一直是灰的）
+      refreshSubmit();
       render(t.result);
     } else if (t.status === 'failed') {
       clearInterval(pollTimer);

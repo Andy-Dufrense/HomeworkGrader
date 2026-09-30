@@ -971,13 +971,17 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
 
     # 诊断（HG_DEBUG_MATCH=1）：把这一轮"哪一格配到了哪一个起音"落盘，排查"明明判过却报漏"用
     if os.environ.get("HG_DEBUG_MATCH") == "1":
+        preds_dbg = (local_preds(slots, match, events, scale, offset) if LOCAL_WARP
+                     else [float(sl["t"]) * scale + offset for sl in slots])
         dbg = {"scale": round(scale, 4), "offset": round(offset, 4),
                "slots": len(slots), "onsets": len(events),
                "match": [{"slot": s, "slot_t": round(float(slots[s]["t"]), 3),
                           "notes": [int(score[j]["midi"]) for j in slots[s]["notes"]],
                           "onset": i, "onset_t": round(float(events[i]["t"]), 3),
                           "dev_ms": round((float(events[i]["t"])
-                                           - (float(slots[s]["t"]) * scale + offset)) * 1000)}
+                                           - (float(slots[s]["t"]) * scale + offset)) * 1000),
+                          "pred_t": round(preds_dbg[s], 3),
+                          "dev_local_ms": round((float(events[i]["t"]) - preds_dbg[s]) * 1000)}
                          for s, i in sorted(match.items())],
                "extra": [{"onset": i, "t": round(float(events[i]["t"]), 3)}
                          for i in sorted(extra)]}
