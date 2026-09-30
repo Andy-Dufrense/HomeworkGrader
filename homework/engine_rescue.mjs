@@ -207,7 +207,7 @@ for (const e of (job.entries || [])) {
   // 所以这里把阈值放松，但**证据仍然与音高无关**（电平/通量/频带抬头/形状），
   // 而且搜索范围就是**这一格自己的时间片**（sliceMs），不会跑到隔壁那一音上。
   const REL = { sharp: 1.15, hfBand: 1.5, lowBand: 1.0, flux: 0.18 };
-  const half = SCAN_RANGE_MS;   // 预测时刻 ±250ms（实测这一档两边数字最好）
+  const half = Number(e.halfMs || SCAN_RANGE_MS);   // 区域自适应：1 弦那片 ±400ms，其它 ±250ms
   // 搜索范围优先用调用方给的"夹在两旁起音之间"那一段（后台知道谱面顺序 → 漏掉的那一下
   // 只可能在它前后两格之间）；没给才退回"预测时刻 ± 时间片/2"。
   const T0 = Math.max(0, e.winFrom != null ? Number(e.winFrom) * 1000 : e.t * 1000 - half);

@@ -1033,6 +1033,12 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
                        "string": sn.get("string"), "fret": sn.get("fret"), "level": 0.12}
                 if slices is not None:
                     ent["wins"] = wins_for(sn["midi"], slices[s], multi)
+                # 区域自适应（用户 2026-09-30：针对不同地方做不同适应）：
+                #   1 弦那一片本来就是"轻、高、最容易被上一根盖住" → 搜索窗放宽到 ±400ms；
+                #   其它区域先保持 ±250ms（放宽会误补同音余响那类）。
+                # ⚠ 分区参数只留**验证过有收益**的：1 弦 ±400/±600ms 试过，四个靶子与
+                #   全部负面靶子一个数字都没变 → 不留（占着参数位会让人以为它在起作用）。
+                ent["halfMs"] = int(RESCUE_RANGE_MS)
                 entries.append(ent)
                 tags.append((s, k))
         if entries:
