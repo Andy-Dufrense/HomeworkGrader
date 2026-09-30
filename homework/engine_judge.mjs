@@ -21,6 +21,9 @@ import path from 'node:path';
 const M = 'file:///E:/GuitarFollowLab/backend/engine/';
 const { judgeNote } = await import(M + 'judger.js');
 const { spectrumOf, midiToName } = await import(M + 'dsp.js');
+const { strongestF0InBand } = await import(M + 'analysis.js');
+// 诊断（HG_READ=1）：按"起音 → 读这一下期望音频带里最响的那条基频"的路子，多给一条正面证据
+const READ = process.env.HG_READ === '1';
 
 const SR = 48000;
 const JUDGE_AT_MS = 90;          // 起音后 90ms 出结论（产品页同）
@@ -106,6 +109,13 @@ for (const p of job.pairs) {
     if (r === null) { r = one; usedAt = atMs; }
     if (one && one.pass) { r = one; usedAt = atMs; break; }
   }
+  let readHz = null, readCents = null;
+  if (READ) {
+    const f0 = 440 * Math.pow(2, (p.expectedMidi - 69) / 12);
+    const rr = strongestF0InBand(spec, SR, spec.length,
+      f0 * Math.pow(2, -2 / 12), f0 * Math.pow(2, 2 / 12));
+    if (rr && rr.hz > 0) { readHz = rr.hz; readCents = 1200 * Math.log2(rr.hz / f0); }
+  }
   const heard = r && r.heard != null ? r.heard : null;
   judged.push({
     t: p.t,
@@ -118,7 +128,7 @@ for (const p of job.pairs) {
     heardName: heard == null ? null : midiToName(heard),
     fit: r && r.fit != null ? Number(r.fit.toFixed(0)) : null,
     margin: r && r.margin != null ? Number(r.margin.toFixed(3)) : null,
-    atMs: usedAt,
+    atMs: usedAt, readHz, readCents,
   });
 }
 

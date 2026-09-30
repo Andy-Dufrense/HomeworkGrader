@@ -854,6 +854,13 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
             #   判定没过多半是"这一下不够实/上一个音还在响"（实测 1/38：Hey Jude 第 5 个音
             #   heard=C4 但 fit 221、margin 1.007，卡在候选判据上）。
             #   这类**算过**，但会在过程提醒里说明白，不让它变成一个看不见的宽容。
+            rc = jd.get("readCents") if os.environ.get("HG_READ") == "1" else None
+            # 用户的思路：起音这一下，在期望音的频带里读最响的那条基频；差在 50 音分内就是过
+            if (not jd["pass"]) and rc is not None and abs(rc) <= 50:
+                weak += 1
+                rows.append(dict(base, kind="ok", got=want, got_midi=jd.get("heard"),
+                                 weak=True))
+                continue
             if (not jd["pass"]) and jd.get("heardName") == want:
                 weak += 1
                 rows.append(dict(base, kind="ok", got=want, got_midi=jd.get("heard"),
