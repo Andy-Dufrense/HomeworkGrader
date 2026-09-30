@@ -26,3 +26,7 @@ scores/*.gp7
 Thumbs.db
 desktop.ini
 *.tmp
+
+# ── 看图（临时产物，用 tools/make_spots_view.py 随时重出）────────────────
+web/spectro.html
+web/spots_*.png
