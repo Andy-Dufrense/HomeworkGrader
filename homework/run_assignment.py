@@ -575,20 +575,97 @@ def verdict_text(score, pass_line, key_groups, process, total_issues):
 #   所以这里自己走三步，判定仍然只用 engine/judger.js 的 judgeNote，
 #   而且窗口/opts 严格照产品页那一处调用（见 engine_judge.mjs 的注释）。
 
-def _pair_candidates(events, score):
-    """候选配对：按"第几个音"的窗口 ∪ 按时间就近的窗口。"""
+def build_slots(score, eps=0.02):
+    """谱面 → 「格」：**同一时刻响的几根弦算一格**（跟弹那边叫 slot / 多音格）。
+
+    为什么要有这一层（用户 Q1 / Q16）：
+      单音作业里一格就是一个音，行为和以前逐字一样；
+      双音/柱式和弦作业里一格两根弦（同一时刻），一个起音该判这一格里的所有弦。
+      以前的配对是"一个起音对一个音"，双音谱判下去会说"漏了一半" —— 那不是学员漏了，
+      是我们的格子没建对。第一版按 Q1 的口径只判"这几根弦是不是都在响"（和弦+节奏），
+      逐音精度等跟弹那边 Q16 的多音定版再对齐。
+
+    eps 是"算不算同一时刻"的容差：.gp 里同一柱音的时刻是一样的（浮点尾数可能差一点点），
+    0.02 秒远小于最快相邻音（200 BPM 的 32 分音符也有 0.037 秒），不会把先后音并到一起。
+    """
+    order = sorted(range(len(score)), key=lambda j: (float(score[j]["t"]), j))
+    slots = []
+    for j in order:
+        t = float(score[j]["t"])
+        if slots and abs(t - slots[-1]["t"]) <= eps:
+            slots[-1]["notes"].append(j)
+        else:
+            slots.append({"t": t, "notes": [j]})
+    return slots
+
+
+def _pair_candidates(events, slots, score):
+    """候选配对：按「第几格」的窗口 ∪ 按时间就近的窗口。
+
+    一格给出（可能不止一条）配对：格里有几根弦就给几条，判定桥逐条判，
+    DP 再按"这一格整体得的平均分"决定配不配 —— 单音格就是一条，和以前完全一样。
+    """
     pairs, index = [], []
-    n, m = len(events), len(score)
+    n, m = len(events), len(slots)
     for i, e in enumerate(events):
         base = int(round(i * m / float(max(1, n))))
         cand = set(range(max(0, base - PAIR_RANK_WIN), min(m, base + PAIR_RANK_WIN + 1)))
-        cand |= {j for j, s in enumerate(score) if abs(e["t"] - s["t"]) <= PAIR_TIME_WIN}
-        for j in sorted(cand):
-            pairs.append({"t": e["t"], "expectedMidi": int(score[j]["midi"]),
-                          "string": score[j].get("string"), "fret": score[j].get("fret"),
-                          "level": e.get("lv")})
-            index.append((i, j))
+        cand |= {s for s, sl in enumerate(slots) if abs(e["t"] - sl["t"]) <= PAIR_TIME_WIN}
+        for s in sorted(cand):
+            for k, j in enumerate(slots[s]["notes"]):
+                sn = score[j]
+                pairs.append({"t": e["t"], "expectedMidi": int(sn["midi"]),
+                              "string": sn.get("string"), "fret": sn.get("fret"),
+                              "level": e.get("lv")})
+                index.append((i, s, k))
     return pairs, index
+
+
+def _dp_match_units(index, judged, events, slots, score, scale, offset):
+    """单调 DP（按**格**配对）：两条序列都允许跳过。
+
+    跳起音 = 多弹（extra）；跳一格 = 漏弹（这一格里的音全算漏）。
+    一格的分数 = 格里每个音各自"过/不过"的**平均**：
+      全过 → 2.0（和单音格一模一样），只过一根 → 0.85，全不过 → -0.30。
+    所以"和弦里有一根没响"会被配上去、如实报成那根弦的问题，而不是整格算漏。
+    """
+    per = {}
+    for (i, s, _k), jd in zip(index, judged):
+        dt = abs(events[i]["t"] - (slots[s]["t"] * scale + offset))
+        if dt > PAIR_MATCH_WIN:
+            continue
+        per.setdefault((i, s), []).append(jd)
+    W = {}
+    for (i, s), jds in per.items():
+        dt = abs(events[i]["t"] - (slots[s]["t"] * scale + offset))
+        mean = sum(2.0 if jd["pass"] else -0.30 for jd in jds) / float(len(jds))
+        W[(i, s)] = mean - dt * 0.5
+    n, m = len(events), len(slots)
+    SKIP_E, SKIP_S = -0.25, -0.6
+    dp = [[0.0] * (m + 1) for _ in range(n + 1)]
+    back = [[None] * (m + 1) for _ in range(n + 1)]
+    for i in range(n, -1, -1):
+        for s in range(m, -1, -1):
+            if i == n and s == m:
+                continue
+            best, arg = -1e9, None
+            if i < n and SKIP_E + dp[i + 1][s] > best:
+                best, arg = SKIP_E + dp[i + 1][s], ("skip_e", i + 1, s)
+            if s < m and SKIP_S + dp[i][s + 1] > best:
+                best, arg = SKIP_S + dp[i][s + 1], ("skip_s", i, s + 1)
+            if i < n and s < m and (i, s) in W and W[(i, s)] + dp[i + 1][s + 1] > best:
+                best, arg = W[(i, s)] + dp[i + 1][s + 1], ("pair", i + 1, s + 1)
+            dp[i][s], back[i][s] = best, arg
+    match, extra = {}, set()
+    i = s = 0
+    while not (i == n and s == m):
+        kind, ni, ns = back[i][s]
+        if kind == "pair":
+            match[s] = i
+        elif kind == "skip_e":
+            extra.add(i)
+        i, s = ni, ns
+    return match, extra
 
 
 def _dp_match(index, judged, events, score, scale, offset):
@@ -681,28 +758,35 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     if not events:
         raise SystemExit("这一段录音里一个起音都没检出来")
 
-    pairs, index = _pair_candidates(events, score)
+    # 谱面 → 「格」：同一时刻响的几根弦算一格（单音作业里一格就是一个音）
+    slots = build_slots(score)
+    multi = sum(1 for sl in slots if len(sl["notes"]) > 1)
+    if multi:
+        print("谱面里有 %d 处是好几个音一起响（多音格）：一个起音判这一格里的所有弦。"
+              % multi)
+
+    pairs, index = _pair_candidates(events, slots, score)
     judged = _judge_pairs(pairs, index, audio, jobdir, band)
 
     # ① 整体模型：以"第一声"为锚（用户口径：从第一个明显的音开始算第一个音），
     #    速度比粗扫，挑窗内判过最多的那一档
-    passed = {(i, j) for (i, j), jd in zip(index, judged) if jd["pass"]}
-    t0_e, t0_s = events[0]["t"], score[0]["t"]
+    passed = {(i, s) for (i, s, _k), jd in zip(index, judged) if jd["pass"]}
+    t0_e, t0_s = events[0]["t"], slots[0]["t"]
     best = (-1, 1.0, t0_e - t0_s)
     sc = 0.80
     while sc <= 1.6001:
         off = t0_e - t0_s * sc
-        n = sum(1 for (i, j) in passed
-                if abs(events[i]["t"] - (score[j]["t"] * sc + off)) <= 0.35)
+        n = sum(1 for (i, s) in passed
+                if abs(events[i]["t"] - (slots[s]["t"] * sc + off)) <= 0.35)
         if n > best[0]:
             best = (n, sc, off)
         sc += 0.02
     hits, scale, offset = best
 
     # ② DP → 用配对结果重拟合"位移+速度比" → 再 DP（两轮就收敛）
-    match, extra = _dp_match(index, judged, events, score, scale, offset)
+    match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset)
     for _ in range(2):
-        pts = [(score[j]["t"], events[i]["t"]) for j, i in match.items()]
+        pts = [(slots[s]["t"], events[i]["t"]) for s, i in match.items()]
         if len(pts) >= 6:
             a = [[t_s, 1.0] for t_s, _ in pts]
             y = [t_e for _, t_e in pts]
@@ -712,51 +796,73 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
             keep = [k for k in range(len(y)) if resid[k] <= max(0.30, med * 2.5)]
             if len(keep) >= 6:
                 scale, offset = _fit_affine([a[k] for k in keep], [y[k] for k in keep])
-        match, extra = _dp_match(index, judged, events, score, scale, offset)
+        match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset)
 
     jd_of = {}
-    for (i, j), jd in zip(index, judged):
-        jd_of[(i, j)] = jd
+    for (i, s, k), jd in zip(index, judged):
+        jd_of[(i, s, k)] = jd
     beats = beat_index_map(score, None)
     rows = []
     weak = 0        # 判定没过、但引擎自己量到的音名就是谱面那个音（见下）
-    for j, sn in enumerate(score):
-        base = {"score_idx": j, "t_score": sn["t"], "want": note_name(sn["midi"]),
-                "string": sn.get("string"), "fret": sn.get("fret"),
-                "want_midi": int(sn["midi"]),
-                "measure": sn.get("measure"), "beat": sn.get("beat")}
-        if j not in match:
-            rows.append(dict(base, kind="missing", t_audio=None, got=None))
+    matched_notes = 0
+    for s, sl in enumerate(slots):
+        if s not in match:                      # 这一格整格没配上 → 格里的音全算漏
+            for j in sl["notes"]:
+                sn = score[j]
+                rows.append({"score_idx": j, "t_score": sn["t"],
+                             "want": note_name(sn["midi"]),
+                             "string": sn.get("string"), "fret": sn.get("fret"),
+                             "want_midi": int(sn["midi"]),
+                             "measure": sn.get("measure"), "beat": sn.get("beat"),
+                             "kind": "missing", "t_audio": None, "got": None})
             continue
-        i = match[j]
-        jd = jd_of[(i, j)]
-        base["t_audio"] = events[i]["t"]
-        want = note_name(sn["midi"])
-        # 收下"判定没通过、但引擎的读数就是谱面这个音"的情况（2026-09-29）：
-        #   用户定的 Q13 是"检测到的音名 == 谱面音名就算过"，而这正是引擎自己的读数；
-        #   判定没过多半是"这一下不够实/上一个音还在响"（实测 1/38：Hey Jude 第 5 个音
-        #   heard=C4 但 fit 221、margin 1.007，卡在候选判据上）。
-        #   这类**算过**，但会在过程提醒里说明白，不让它变成一个看不见的宽容。
-        if (not jd["pass"]) and jd.get("heardName") == want:
-            weak += 1
-            rows.append(dict(base, kind="ok", got=want, got_midi=jd.get("heard"), weak=True))
-            continue
-        rows.append(dict(base, kind="ok" if jd["pass"] else "wrong_note",
-                         got=jd.get("heardName"), got_midi=jd.get("heard")))
+        i = match[s]
+        for k, j in enumerate(sl["notes"]):     # 格里的每根弦各判一次
+            sn = score[j]
+            base = {"score_idx": j, "t_score": sn["t"], "want": note_name(sn["midi"]),
+                    "string": sn.get("string"), "fret": sn.get("fret"),
+                    "want_midi": int(sn["midi"]),
+                    "measure": sn.get("measure"), "beat": sn.get("beat")}
+            jd = jd_of.get((i, s, k))
+            if jd is None:                      # 候选窗没罩住这根弦（极少数）：当没判出来
+                rows.append(dict(base, kind="missing", t_audio=None, got=None))
+                continue
+            matched_notes += 1
+            base["t_audio"] = events[i]["t"]
+            want = note_name(sn["midi"])
+            # 收下"判定没通过、但引擎的读数就是谱面这个音"的情况（2026-09-29）：
+            #   用户定的 Q13 是"检测到的音名 == 谱面音名就算过"，而这正是引擎自己的读数；
+            #   判定没过多半是"这一下不够实/上一个音还在响"（实测 1/38：Hey Jude 第 5 个音
+            #   heard=C4 但 fit 221、margin 1.007，卡在候选判据上）。
+            #   这类**算过**，但会在过程提醒里说明白，不让它变成一个看不见的宽容。
+            if (not jd["pass"]) and jd.get("heardName") == want:
+                weak += 1
+                rows.append(dict(base, kind="ok", got=want, got_midi=jd.get("heard"),
+                                 weak=True))
+                continue
+            rows.append(dict(base, kind="ok" if jd["pass"] else "wrong_note",
+                             got=jd.get("heardName"), got_midi=jd.get("heard")))
     for i in sorted(extra):
         rows.append({"score_idx": None, "kind": "extra", "t_audio": events[i]["t"],
                      "want": None, "got": None, "measure": None, "beat": None})
+    # 节奏那几样（停顿 / 抢拖 / 一会儿快一会儿慢）按**格**看，一格取一格的代表音，
+    # 免得双音格把同一下算两遍。
+    match_notes = {}
+    for s, i in match.items():
+        for j in slots[s]["notes"]:
+            match_notes[j] = i
     info = {"mode": "作业批改自己的配对（引擎判定）", "offset": offset, "scale": scale,
-            "onsets": len(events), "matched": len(match), "extra": len(extra),
-            "hit_window": hits, "candidates": len(pairs), "onsets_list": events,
-            "weak_confirmed": weak,
+            "onsets": len(events), "matched": matched_notes, "slots_matched": len(match),
+            "slots": len(slots), "multi_slots": multi,
+            "extra": len(extra), "hit_window": hits, "candidates": len(pairs),
+            "onsets_list": events, "weak_confirmed": weak,
             "repeat": check_repeat(events, extra, score, scale, offset,
                                    audio, jobdir, band)}
     # 明显停顿：相邻两个"配上的"音，学员这边的间隔比**谱面这一处该有的间隔**长很多。
     # ⚠ 不能拿"全体间隔中位数"当参照 —— 谱面里本来就有长音符（Hey Jude 有 1.58 秒的长音），
     #   那样会把长音全报成停顿（第一版就是这么错的）。
     marks = []
-    ordered = sorted(match.items(), key=lambda kv: kv[1])       # [(谱面 j, 起音 i)] 按时间
+    ordered = sorted(match_notes.items(), key=lambda kv: kv[1])     # [(谱面 j, 起音 i)] 按时间
     for (j1, i1), (j2, i2) in zip(ordered, ordered[1:]):
         exp = (score[j2]["t"] - score[j1]["t"]) * scale
         got = events[i2]["t"] - events[i1]["t"]
@@ -767,8 +873,8 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
                           "seconds": round(got - exp, 2)})
     info["timing_marks"] = marks
     # 节拍网格：抢拍 / 拖拍（和上面的停顿合并成同一份"节奏标记"）
-    info["timing_marks"] += timing_marks(match, events, score, scale, offset, tempo)
-    info["unstable_spans"] = unstable_spans(match, events, score, scale, tempo)
+    info["timing_marks"] += timing_marks(match_notes, events, score, scale, offset, tempo)
+    info["unstable_spans"] = unstable_spans(match_notes, events, score, scale, tempo)
     return rows, info
 
 
@@ -1126,7 +1232,9 @@ def main(argv=None):
             "align": {"mode": pinfo["mode"], "low_confidence": False,
                       "offset": round(pinfo["offset"], 3),
                       "scale": round(pinfo["scale"], 4),
-                      "matched": pinfo["matched"], "onsets": pinfo["onsets"]},
+                      "matched": pinfo["matched"], "onsets": pinfo["onsets"],
+                      "slots": pinfo["slots"], "multi_slots": pinfo["multi_slots"],
+                      "slots_matched": pinfo["slots_matched"]},
             "counts": counts, "judged_slots": pinfo["matched"],
             "verdict_text": vtext, "groups": groups, "key_issues": key_groups,
             "process": process, "score": sc, "issues": groups,
@@ -1177,7 +1285,10 @@ def main(argv=None):
             "error_marks": [],
             "ref_crop": crop_desc, "ref_notes": len(score),
             "standard": standard,
-            "note": "数字来自「作业批改自己的链路」：起音和判定都是 GuitarFollow engine 的代码"
+            "note": (("谱面里有 %d 处是好几个音一起响，按「一个起音判这一格"
+                      "里的所有弦」算。" % pinfo["multi_slots"])
+                     if pinfo["multi_slots"] else "")
+                    + "数字来自「作业批改自己的链路」：起音和判定都是 GuitarFollow engine 的代码"
                     "（判定窗口/opts 照产品页那一处调用），配对（对齐）由作业检查自己做"
                     "——所以漏一个音只会报一处漏，不会一路错位。"
                     "得分 = 弹对的音 ÷ 本次作业的音数（%d/%d）。" % (counts["ok"], len(score)),
