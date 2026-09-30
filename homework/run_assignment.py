@@ -656,6 +656,20 @@ def win_ms_for(midi, slice_sec):
     return round(min(max(win, WIN_MIN_MS), WIN_MAX_MS), 1)
 
 
+def wins_for(midi, slice_sec, multi=False):
+    """这一条配对要试哪几扇窗（判定桥的 wins 键）。
+
+    默认是产品页那一扇（多音格再等一格：90ms 和 170ms）；
+    这个音需要更长的窗（低音弦）时，再加一扇"贴在它自己时间片里"的长窗。
+    """
+    wins = [{"atMs": a, "winMs": WIN_MIN_MS}
+            for a in (JUDGE_AT_MULTI_MS if multi else [JUDGE_AT_MS])]
+    w = win_ms_for(midi, slice_sec)
+    if w > WIN_MIN_MS + 1:
+        wins.append({"atMs": WIN_START_MS + w, "winMs": w})
+    return wins
+
+
 def _pair_candidates(events, slots, score, scale=1.0, windows=False):
     """候选配对：按「第几格」的窗口 ∪ 按时间就近的窗口。
 
@@ -683,13 +697,7 @@ def _pair_candidates(events, slots, score, scale=1.0, windows=False):
                 if slices is None:
                     at = {"atMsList": JUDGE_AT_MULTI_MS} if multi else {}
                 else:
-                    wins = [{"atMs": a, "winMs": WIN_MIN_MS}
-                            for a in (JUDGE_AT_MULTI_MS if multi else [JUDGE_AT_MS])]
-                    w = win_ms_for(sn["midi"], slices[s])
-                    if w > WIN_MIN_MS + 1:
-                        # 低音弦：再加一扇"长窗"，贴在音符自己的时间片里（起音后 30ms 起算）
-                        wins.append({"atMs": WIN_START_MS + w, "winMs": w})
-                    at = {"wins": wins}
+                    at = {"wins": wins_for(sn["midi"], slices[s], multi)}
                 pairs.append({"t": e["t"], "expectedMidi": int(sn["midi"]),
                               "string": sn.get("string"), "fret": sn.get("fret"),
                               "level": e.get("lv"), **at})
@@ -816,9 +824,20 @@ def check_repeat(events, extras, score, scale, offset, audio, jobdir, band):
     for k, e in enumerate(ev):
         for j, s in enumerate(score):
             if abs(e["t"] - (s["t"] * scale + off2)) <= 0.6:
+                at = {}
+                if WIN_AUTO:
+                    # 和第一遍同一条规则（低音弦要长窗）—— 不然"第二遍"那句在低音弦上
+                    # 会按产品页那扇短窗判，和前面判过的结果对不上。
+                    if j + 1 < len(score):
+                        g = float(score[j + 1]["t"]) - float(s["t"])
+                    elif j > 0:
+                        g = float(s["t"]) - float(score[j - 1]["t"])
+                    else:
+                        g = 5.0
+                    at = {"wins": wins_for(s["midi"], g * scale)}
                 pairs.append({"t": e["t"], "expectedMidi": int(s["midi"]),
                               "string": s.get("string"), "fret": s.get("fret"),
-                              "level": e.get("lv")})
+                              "level": e.get("lv"), **at})
                 index.append((k, j))
     if not pairs:
         return {"repeat": False, "count": len(extras)}
