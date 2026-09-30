@@ -141,6 +141,7 @@ resetAnalysis();
 let _floor = 0.001, _frames = 0, _onsetMs = -1e9, _refr = -1e9;
 const _hist = [];
 const frameInfo = [];       // { t, lv, gate, strict, relaxed, why }
+const dbgRows = [];         // HG_RESCUE_DEBUG=1 时，把每帧的量打出来（排"卡在哪一条"用）
 for (let t = 0; t < (AUDIO.length / SR) * 1000; t += HOP) {
   const buf = frameEndingAt(t);
   const lv = rmsOf(buf, buf.length - 1024, 1024);
@@ -165,12 +166,21 @@ for (let t = 0; t < (AUDIO.length / SR) * 1000; t += HOP) {
     && hfBand > REL_HF && lowBand > REL_LOW && lv > lagged * REL_RISE
     && shape > 0.02;
   frameInfo.push({ t: t / 1000, lv, gate, lagged, hfBand, lowBand, flux, shape, strict, relaxed });
+  if (process.env.HG_RESCUE_DEBUG === '1') {
+    dbgRows.push(`  t=${(t / 1000).toFixed(3)} lv=${lv.toFixed(4)} gate=${gate.toFixed(4)}`
+      + ` lag=${lagged.toFixed(4)} flux=${flux.toFixed(3)} hf=${hfBand.toFixed(2)} lo=${lowBand.toFixed(2)}`
+      + ` shape=${shape.toFixed(3)}${strict ? ' ★严格' : ''}${relaxed ? ' ◆放松' : ''}`);
+  }
   _hist.push(lv);
   if (_hist.length > 10) _hist.shift();
   if (strict) { _refr = t + 110; _onsetMs = t; }
 }
 console.log(`整段回放：${frameInfo.length} 帧 ｜ 严格判据认了 ${frameInfo.filter((f) => f.strict).length} 次`
   + ` ｜ 放松判据(${REL_HF}/${REL_LOW}/${REL_RISE}) 认了 ${frameInfo.filter((f) => f.relaxed).length} 次`);
+if (process.env.HG_RESCUE_DEBUG === '1') {
+  console.log(`—— 逐帧台帐（${dbgRows.length} 帧）——`);
+  for (const line of dbgRows) console.log(line);
+}
 
 for (const e of (job.entries || [])) {
   const f0 = 440 * Math.pow(2, (Number(e.expectedMidi) - 69) / 12);
