@@ -260,9 +260,9 @@
   },
   {
    "t": 8.25,
-   "midi": 64,
+   "midi": 65,
    "string": 1,
-   "fret": 0,
+   "fret": 1,
    "measure": 2,
    "beat": 4,
    "dur": 0.375

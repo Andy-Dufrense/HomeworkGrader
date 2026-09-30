@@ -1,7 +1,7 @@
 {
  "meta": {
-  "file": "E:\\HomeworkGrader\\scores\\practice\\6415-dyad-t2.gp4",
-  "title": "6415 Am-F-C-G / dyad-t2",
+  "file": "E:\\HomeworkGrader\\scores\\practice\\1645-dyad.gp4",
+  "title": "1645 C-Am-F-G / dyad",
   "artist": "HomeworkGrader",
   "album": "",
   "tempo": 80.0,
@@ -71,7 +71,7 @@
      "A2",
      "E2"
     ],
-    "notes": 32,
+    "notes": 40,
     "percussion": false
    }
   ],
@@ -80,38 +80,29 @@
  "notes": [
   {
    "t": 0.75,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 0,
-   "beat": 0,
-   "dur": 0.375
-  },
-  {
-   "t": 0.75,
-   "midi": 45,
+   "midi": 48,
    "string": 5,
-   "fret": 0,
+   "fret": 3,
    "measure": 0,
    "beat": 0,
    "dur": 0.375
   },
   {
    "t": 1.125,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
    "measure": 0,
    "beat": 1,
    "dur": 0.375
   },
   {
-   "t": 1.125,
-   "midi": 45,
-   "string": 5,
+   "t": 1.5,
+   "midi": 64,
+   "string": 1,
    "fret": 0,
    "measure": 0,
-   "beat": 1,
+   "beat": 2,
    "dur": 0.375
   },
   {
@@ -124,66 +115,84 @@
    "dur": 0.375
   },
   {
-   "t": 1.5,
+   "t": 1.875,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 0,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 2.25,
+   "midi": 48,
+   "string": 5,
+   "fret": 3,
+   "measure": 0,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 2.625,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 0,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 3.0,
+   "midi": 64,
+   "string": 1,
+   "fret": 0,
+   "measure": 0,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 3.0,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 0,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 3.375,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 0,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 3.75,
    "midi": 45,
    "string": 5,
    "fret": 0,
-   "measure": 0,
+   "measure": 1,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 4.125,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 1,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 4.5,
+   "midi": 64,
+   "string": 1,
+   "fret": 0,
+   "measure": 1,
    "beat": 2,
-   "dur": 0.375
-  },
-  {
-   "t": 1.875,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 0,
-   "beat": 3,
-   "dur": 0.375
-  },
-  {
-   "t": 1.875,
-   "midi": 45,
-   "string": 5,
-   "fret": 0,
-   "measure": 0,
-   "beat": 3,
-   "dur": 0.375
-  },
-  {
-   "t": 3.75,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 1,
-   "beat": 0,
-   "dur": 0.375
-  },
-  {
-   "t": 3.75,
-   "midi": 41,
-   "string": 6,
-   "fret": 1,
-   "measure": 1,
-   "beat": 0,
-   "dur": 0.375
-  },
-  {
-   "t": 4.125,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 1,
-   "beat": 1,
-   "dur": 0.375
-  },
-  {
-   "t": 4.125,
-   "midi": 41,
-   "string": 6,
-   "fret": 1,
-   "measure": 1,
-   "beat": 1,
    "dur": 0.375
   },
   {
@@ -196,111 +205,147 @@
    "dur": 0.375
   },
   {
-   "t": 4.5,
-   "midi": 41,
-   "string": 6,
-   "fret": 1,
-   "measure": 1,
-   "beat": 2,
-   "dur": 0.375
-  },
-  {
    "t": 4.875,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
    "measure": 1,
    "beat": 3,
    "dur": 0.375
   },
   {
-   "t": 4.875,
-   "midi": 41,
-   "string": 6,
-   "fret": 1,
-   "measure": 1,
-   "beat": 3,
-   "dur": 0.375
-  },
-  {
-   "t": 6.75,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 2,
-   "beat": 0,
-   "dur": 0.375
-  },
-  {
-   "t": 6.75,
-   "midi": 48,
+   "t": 5.25,
+   "midi": 45,
    "string": 5,
-   "fret": 3,
-   "measure": 2,
-   "beat": 0,
-   "dur": 0.375
-  },
-  {
-   "t": 7.125,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 2,
-   "beat": 1,
-   "dur": 0.375
-  },
-  {
-   "t": 7.125,
-   "midi": 48,
-   "string": 5,
-   "fret": 3,
-   "measure": 2,
-   "beat": 1,
-   "dur": 0.375
-  },
-  {
-   "t": 7.5,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 2,
-   "beat": 2,
-   "dur": 0.375
-  },
-  {
-   "t": 7.5,
-   "midi": 48,
-   "string": 5,
-   "fret": 3,
-   "measure": 2,
-   "beat": 2,
-   "dur": 0.375
-  },
-  {
-   "t": 7.875,
-   "midi": 60,
-   "string": 2,
-   "fret": 1,
-   "measure": 2,
-   "beat": 3,
-   "dur": 0.375
-  },
-  {
-   "t": 7.875,
-   "midi": 48,
-   "string": 5,
-   "fret": 3,
-   "measure": 2,
-   "beat": 3,
-   "dur": 0.375
-  },
-  {
-   "t": 9.75,
-   "midi": 59,
-   "string": 2,
    "fret": 0,
-   "measure": 3,
+   "measure": 1,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 5.625,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 1,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 6.0,
+   "midi": 64,
+   "string": 1,
+   "fret": 0,
+   "measure": 1,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 6.0,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 1,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 6.375,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 1,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 6.75,
+   "midi": 41,
+   "string": 6,
+   "fret": 1,
+   "measure": 2,
    "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 7.125,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 7.5,
+   "midi": 65,
+   "string": 1,
+   "fret": 1,
+   "measure": 2,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 7.5,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 2,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 7.875,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 8.25,
+   "midi": 41,
+   "string": 6,
+   "fret": 1,
+   "measure": 2,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 8.625,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 9.0,
+   "midi": 65,
+   "string": 1,
+   "fret": 1,
+   "measure": 2,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 9.0,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 2,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 9.375,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 7,
    "dur": 0.375
   },
   {
@@ -314,20 +359,20 @@
   },
   {
    "t": 10.125,
-   "midi": 59,
-   "string": 2,
+   "midi": 55,
+   "string": 3,
    "fret": 0,
    "measure": 3,
    "beat": 1,
    "dur": 0.375
   },
   {
-   "t": 10.125,
-   "midi": 43,
-   "string": 6,
+   "t": 10.5,
+   "midi": 67,
+   "string": 1,
    "fret": 3,
    "measure": 3,
-   "beat": 1,
+   "beat": 2,
    "dur": 0.375
   },
   {
@@ -340,30 +385,57 @@
    "dur": 0.375
   },
   {
-   "t": 10.5,
-   "midi": 43,
-   "string": 6,
-   "fret": 3,
-   "measure": 3,
-   "beat": 2,
-   "dur": 0.375
-  },
-  {
    "t": 10.875,
-   "midi": 59,
-   "string": 2,
+   "midi": 55,
+   "string": 3,
    "fret": 0,
    "measure": 3,
    "beat": 3,
    "dur": 0.375
   },
   {
-   "t": 10.875,
+   "t": 11.25,
    "midi": 43,
    "string": 6,
    "fret": 3,
    "measure": 3,
-   "beat": 3,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 11.625,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 3,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 12.0,
+   "midi": 67,
+   "string": 1,
+   "fret": 3,
+   "measure": 3,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 12.0,
+   "midi": 59,
+   "string": 2,
+   "fret": 0,
+   "measure": 3,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 12.375,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 3,
+   "beat": 7,
    "dur": 0.375
   }
  ]

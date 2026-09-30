@@ -25,6 +25,9 @@ const { spectrumOf, midiToName } = await import(M + 'dsp.js');
 const SR = 48000;
 const JUDGE_AT_MS = 90;          // 起音后 90ms 出结论（产品页同）
 const WIN_MS = 8192 / SR * 1000; // 170.67ms
+// 多音格（同一格≥2根弦）可以单独指定"起音后多久判"：小琶音三根弦相隔约 100ms，
+// 只在 90ms 判会读到"第三根还没响"的谱（2026-09-30 实测：9 11 11 那条 8/12 → 170ms 12/12）。
+// 单音格不给这个键，就是上面的 90ms，行为与以前一字不差。
 
 // 六根弦的空弦音高（产品页 judge-loop.js 里的同一张表）
 const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
@@ -68,16 +71,26 @@ function optsFor(string, fret, level) {
 
 const judged = [];
 for (const p of job.pairs) {
-  const spec = spectrumOf(absWindow(p.t * 1000 + JUDGE_AT_MS - WIN_MS, WIN_MS));
-  let r = null;
-  try {
-    r = judgeNote({
-      spec, sampleRate: SR, fftSize: spec.length,
-      expectedMidi: p.expectedMidi,
-      opts: optsFor(p.string, p.fret, p.level),
-    });
-  } catch (e) {
-    r = null;
+  // 判定时刻：默认产品页的 90ms；p.atMsList 给了就逐个试，**有一个过就算过**
+  //（多音格用：小琶音要等到弦都响起来，同时响的双音反而 90ms 更准）
+  const ats = (p.atMsList && p.atMsList.length)
+    ? p.atMsList.map(Number)
+    : [p.atMs != null ? Number(p.atMs) : JUDGE_AT_MS];
+  let r = null, usedAt = ats[0];
+  for (const atMs of ats) {
+    const spec = spectrumOf(absWindow(p.t * 1000 + atMs - WIN_MS, WIN_MS));
+    let one = null;
+    try {
+      one = judgeNote({
+        spec, sampleRate: SR, fftSize: spec.length,
+        expectedMidi: p.expectedMidi,
+        opts: optsFor(p.string, p.fret, p.level),
+      });
+    } catch (e) {
+      one = null;
+    }
+    if (r === null) { r = one; usedAt = atMs; }
+    if (one && one.pass) { r = one; usedAt = atMs; break; }
   }
   const heard = r && r.heard != null ? r.heard : null;
   judged.push({
@@ -91,6 +104,7 @@ for (const p of job.pairs) {
     heardName: heard == null ? null : midiToName(heard),
     fit: r && r.fit != null ? Number(r.fit.toFixed(0)) : null,
     margin: r && r.margin != null ? Number(r.margin.toFixed(3)) : null,
+    atMs: usedAt,
   });
 }
 

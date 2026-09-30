@@ -47,6 +47,14 @@ KEY_ISSUES = 3
 PAIR_RANK_WIN = 12          # 候选：按"第几个音"的窗口（容忍整体位移）
 PAIR_TIME_WIN = 2.0         # 候选：按时间就近（秒）
 PAIR_MATCH_WIN = 0.8        # 单调 DP 里允许的时间残差（秒）
+# 多音格的判定时刻（试两个，有一个过就算过）：
+#   * 小琶音三根弦相隔约 100ms —— 只在 90ms 判会读到"最后一根还没响"的谱
+#     （实测 `9 11 11`：90ms 过 8/12，170ms 过 12/12）；
+#   * 同时响的双音反过来 —— 170ms 时两根弦衰减不一样，读数变坏
+#     （1645 那条真录音：只判 90ms 是 88 分，只判 170ms 掉到 82 分）。
+# 170ms 不是随手挑的：判定窗本身 8192/48k = 170.67ms，所以 170 时窗 = [起音, 起音+170ms]。
+# **单音格不带这个键**，还是产品页的 90ms，单音作业行为一字不变。
+JUDGE_AT_MULTI_MS = [90, 170]
 #   0.5 会把"学员局部慢了一下"的音错判成漏（Hey Jude 上实测：漏 3 → 真漏只有 2）；
 #   1.2 又太宽，会把真的漏弹硬配到隔壁起音上（真漏从 2 变 1）。0.8 刚好。
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
@@ -612,11 +620,13 @@ def _pair_candidates(events, slots, score):
         cand = set(range(max(0, base - PAIR_RANK_WIN), min(m, base + PAIR_RANK_WIN + 1)))
         cand |= {s for s, sl in enumerate(slots) if abs(e["t"] - sl["t"]) <= PAIR_TIME_WIN}
         for s in sorted(cand):
+            # 多音格：等这一格的弦都响起来再判（小琶音；单音格不带这个键 = 还是 90ms）
+            at = {"atMsList": JUDGE_AT_MULTI_MS} if len(slots[s]["notes"]) > 1 else {}
             for k, j in enumerate(slots[s]["notes"]):
                 sn = score[j]
                 pairs.append({"t": e["t"], "expectedMidi": int(sn["midi"]),
                               "string": sn.get("string"), "fret": sn.get("fret"),
-                              "level": e.get("lv")})
+                              "level": e.get("lv"), **at})
                 index.append((i, s, k))
     return pairs, index
 
@@ -625,9 +635,15 @@ def _dp_match_units(index, judged, events, slots, score, scale, offset):
     """单调 DP（按**格**配对）：两条序列都允许跳过。
 
     跳起音 = 多弹（extra）；跳一格 = 漏弹（这一格里的音全算漏）。
-    一格的分数 = 格里每个音各自"过/不过"的**平均**：
-      全过 → 2.0（和单音格一模一样），只过一根 → 0.85，全不过 → -0.30。
-    所以"和弦里有一根没响"会被配上去、如实报成那根弦的问题，而不是整格算漏。
+    一格的分数 = 格里每个音各自"过/不过"的**总和**，跳一格的代价也按格里的音数放大：
+
+      * 单音格（n=1）：和 / 平均 / 代价跟以前**完全一样**，单音作业的数字不会动；
+      * 双音格（n=2）：全过 4.0、只过一根 1.7、全不过 -0.6，跳一格是 -1.2。
+
+    为什么不能取平均（2026-09-30 实测）：取平均 + 固定 -0.6 的跳过代价，
+    等于"丢一格双音"和"丢一格单音"代价一样，而双音格的收益又只有单音的一半 ——
+    优化器会去牺牲双音格。1645 那条真录音上，8 个双音格有 3 个被丢成"漏"，
+    还留了 2 个起音没配上。改成按音数算之后，这个问题没了。
     """
     per = {}
     for (i, s, _k), jd in zip(index, judged):
@@ -638,10 +654,13 @@ def _dp_match_units(index, judged, events, slots, score, scale, offset):
     W = {}
     for (i, s), jds in per.items():
         dt = abs(events[i]["t"] - (slots[s]["t"] * scale + offset))
-        mean = sum(2.0 if jd["pass"] else -0.30 for jd in jds) / float(len(jds))
-        W[(i, s)] = mean - dt * 0.5
+        k = float(len(jds))
+        total = sum(2.0 if jd["pass"] else -0.30 for jd in jds)
+        W[(i, s)] = total - dt * 0.5 * k
     n, m = len(events), len(slots)
-    SKIP_E, SKIP_S = -0.25, -0.6
+    SKIP_E = -0.25
+    # 跳过一格的代价按格里的音数算：单音格还是 -0.6（和以前一模一样）
+    SKIP_S = [-0.6 * len(sl["notes"]) for sl in slots]
     dp = [[0.0] * (m + 1) for _ in range(n + 1)]
     back = [[None] * (m + 1) for _ in range(n + 1)]
     for i in range(n, -1, -1):
@@ -651,8 +670,8 @@ def _dp_match_units(index, judged, events, slots, score, scale, offset):
             best, arg = -1e9, None
             if i < n and SKIP_E + dp[i + 1][s] > best:
                 best, arg = SKIP_E + dp[i + 1][s], ("skip_e", i + 1, s)
-            if s < m and SKIP_S + dp[i][s + 1] > best:
-                best, arg = SKIP_S + dp[i][s + 1], ("skip_s", i, s + 1)
+            if s < m and SKIP_S[s] + dp[i][s + 1] > best:
+                best, arg = SKIP_S[s] + dp[i][s + 1], ("skip_s", i, s + 1)
             if i < n and s < m and (i, s) in W and W[(i, s)] + dp[i + 1][s + 1] > best:
                 best, arg = W[(i, s)] + dp[i + 1][s + 1], ("pair", i + 1, s + 1)
             dp[i][s], back[i][s] = best, arg

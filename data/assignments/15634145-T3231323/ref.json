@@ -424,9 +424,9 @@
   },
   {
    "t": 14.25,
-   "midi": 64,
+   "midi": 65,
    "string": 1,
-   "fret": 0,
+   "fret": 1,
    "measure": 4,
    "beat": 4,
    "dur": 0.375
@@ -568,9 +568,9 @@
   },
   {
    "t": 20.25,
-   "midi": 64,
+   "midi": 65,
    "string": 1,
-   "fret": 0,
+   "fret": 1,
    "measure": 6,
    "beat": 4,
    "dur": 0.375
