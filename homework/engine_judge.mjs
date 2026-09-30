@@ -28,6 +28,14 @@ const READ = process.env.HG_READ === '1';
 const SR = 48000;
 const JUDGE_AT_MS = 90;          // 起音后 90ms 出结论（产品页同）
 const WIN_MS = 8192 / SR * 1000; // 170.67ms
+// ── fftSize 必须是"真正做 FFT 的点数"，不是 mags 的个数 ─────────────────────────
+// spectrumOf(buf) 返回的是 mags（长度 = N/2）；analysis.js 里 binHz = sr / fftSize、
+// 峰频率 = pk.bin * binHz。产品页那处调用（judge-loop.js:996）传的正是 PEAK_N = 8192
+// （spec 也是 spectrumOf 出来的、长度 4096）。
+// 我们原来传的是 spec.length（4096）→ bin 宽翻倍成 11.72Hz（product 5.86Hz），
+// 六弦一个半音只有 5Hz，于是低音弦被读成邻居 —— 这就是"隔壁实时都没有、我们有"的真因。
+// 诊断开关：HG_FFT_MAGS=1 退回老写法（复现问题用）。
+const FFT_MAGS = process.env.HG_FFT_MAGS === '1';
 // 多音格（同一格≥2根弦）可以单独指定"起音后多久判"：小琶音三根弦相隔约 100ms，
 // 只在 90ms 判会读到"第三根还没响"的谱（2026-09-30 实测：9 11 11 那条 8/12 → 170ms 12/12）。
 // 单音格不给这个键，就是上面的 90ms，行为与以前一字不差。
@@ -108,7 +116,7 @@ for (const p of job.pairs) {
     let res = null;
     try {
       res = judgeNote({
-        spec, sampleRate: SR, fftSize: spec.length,
+        spec, sampleRate: SR, fftSize: FFT_MAGS ? spec.length : spec.length * 2,
         expectedMidi: p.expectedMidi,
         opts: optsFor(p.string, p.fret, p.level),
       });

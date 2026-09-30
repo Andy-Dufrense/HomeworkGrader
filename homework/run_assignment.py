@@ -70,7 +70,7 @@ JUDGE_AT_MULTI_MS = [90, 170]
 #     往回伸长就会把上一个音（更响的那一段）装进来 —— 09-30 实测：往回伸的长窗
 #     读六弦一律低半音，单音旋律（Hey Jude）也从 95 掉到 84。
 WIN_AUTO = os.environ.get("HG_WIN_AUTO", "1") == "1"
-WIN_KAPPA = float(os.environ.get("HG_WIN_KAPPA", "0.5"))
+WIN_KAPPA = float(os.environ.get("HG_WIN_KAPPA", "0.25"))
 WIN_MIN_MS = float(os.environ.get("HG_WIN_MIN", "170.67"))   # 产品页那扇窗（8192/48k）
 WIN_MAX_MS = float(os.environ.get("HG_WIN_MAX", "683"))      # 12k 下 8192 点
 JUDGE_AT_MS = 90.0          # 产品页：起音后 90ms 出结论
