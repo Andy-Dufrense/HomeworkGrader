@@ -86,33 +86,42 @@ function optsFor(string, fret, level) {
 
 const judged = [];
 for (const p of job.pairs) {
-  // 判定时刻：默认产品页的 90ms；p.atMsList 给了就逐个试，**有一个过就算过**
-  //（多音格用：小琶音要等到弦都响起来，同时响的双音反而 90ms 更准）
-  const ats = (p.atMsList && p.atMsList.length)
-    ? p.atMsList.map(Number)
-    : [p.atMs != null ? Number(p.atMs) : JUDGE_AT_MS];
-  let r = null, usedAt = ats[0];
-  for (const atMs of ats) {
-    const winMs = p.winMs != null ? Number(p.winMs)
-      : (WIN_OVERRIDE != null ? WIN_OVERRIDE : WIN_MS);
+  // 判定用哪几扇窗：**默认就是产品页那一扇**（起音后 90ms、往回 170.67ms）。
+  //   * p.atMsList 给了就逐个试，**有一个过就算过**（多音格用：小琶音要等到弦都响起来，
+  //     同时响的双音反而 90ms 更准）；
+  //   * p.wins 给了就按 [{atMs, winMs}] 逐扇试（作业检查自己的"按音换窗"用：低音弦要更长的
+  //     窗才分得出半音，但**长窗贴在音符自己的时间片里、从起音后 30ms 往后量**，
+  //     不许往回伸长 —— 往回伸长就把上一个音（更响的那一段）装进来了）。
+  const defWinMs = p.winMs != null ? Number(p.winMs)
+    : (WIN_OVERRIDE != null ? WIN_OVERRIDE : WIN_MS);
+  const wins = (p.wins && p.wins.length)
+    ? p.wins.map((x) => ({ atMs: Number(x.atMs), winMs: Number(x.winMs) }))
+    : ((p.atMsList && p.atMsList.length)
+      ? p.atMsList.map((a) => ({ atMs: Number(a), winMs: defWinMs }))
+      : [{ atMs: p.atMs != null ? Number(p.atMs) : JUDGE_AT_MS, winMs: defWinMs }]);
+  let r = null, usedAt = wins[0].atMs;
+  let lastSpec = null;          // 诊断（HG_READ）用：最后一扇窗的频谱
+  for (const w of wins) {
+    const atMs = w.atMs, winMs = w.winMs;
     const spec = spectrumOf(absWindow(p.t * 1000 + atMs - winMs, winMs));
-    let one = null;
+    lastSpec = spec;
+    let res = null;
     try {
-      one = judgeNote({
+      res = judgeNote({
         spec, sampleRate: SR, fftSize: spec.length,
         expectedMidi: p.expectedMidi,
         opts: optsFor(p.string, p.fret, p.level),
       });
     } catch (e) {
-      one = null;
+      res = null;
     }
-    if (r === null) { r = one; usedAt = atMs; }
-    if (one && one.pass) { r = one; usedAt = atMs; break; }
+    if (r === null) { r = res; usedAt = atMs; }
+    if (res && res.pass) { r = res; usedAt = atMs; break; }
   }
   let readHz = null, readCents = null;
   if (READ) {
     const f0 = 440 * Math.pow(2, (p.expectedMidi - 69) / 12);
-    const rr = strongestF0InBand(spec, SR, spec.length,
+    const rr = strongestF0InBand(lastSpec, SR, lastSpec.length,
       f0 * Math.pow(2, -2 / 12), f0 * Math.pow(2, 2 / 12));
     if (rr && rr.hz > 0) { readHz = rr.hz; readCents = 1200 * Math.log2(rr.hz / f0); }
   }

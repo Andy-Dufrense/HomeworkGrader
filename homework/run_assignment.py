@@ -55,6 +55,27 @@ PAIR_MATCH_WIN = 0.8        # 单调 DP 里允许的时间残差（秒）
 # 170ms 不是随手挑的：判定窗本身 8192/48k = 170.67ms，所以 170 时窗 = [起音, 起音+170ms]。
 # **单音格不带这个键**，还是产品页的 90ms，单音作业行为一字不变。
 JUDGE_AT_MULTI_MS = [90, 170]
+# ── 判定窗：**窗长 = min(分辨这个音需要的长度, 这个音自己的时间片)** ──────────────
+# （2026-09-30 用户点破的方向：跟弹是**实时**的，只能一扇固定窗 —— 产品页
+#   8192 点 @12kHz = 683ms；密的地方就装进前一个音，六弦那种半音只有 5Hz 的
+#   低音就分不出来。我们是**后台批改**：可以用未来、可以按音换窗。）
+#   2026-09-30 起**默认开**（扫表见 思路.md §11.11）；不要就设 HG_WIN_AUTO=0
+#   （关掉 = 产品页那扇 170.67ms，行为与以前一字不变）。
+#   档位：HG_WIN_KAPPA（默认 0.5 = 每半音 2 个 bin）/ HG_WIN_MAX / HG_WIN_MIN。
+#   * "分辨需要的长度"：bin ≤ κ × 这个音的半音间隔。bin = SR/N，时长 = N/SR，
+#     所以时长 = 1/(κ·f0·(2^(1/12)−1)) —— **和采样率无关**。
+#     六弦 E2/F2 (82~87Hz)：κ=0.5 → 0.39~0.41s；五弦 A2 → 0.31s；三弦 G3 → 0.17s。
+#   * "这个音自己的时间片"：**这个音到下一个音**的间隔（乘整体速度比）。
+#     ⚠ 长窗**必须贴在音符自己的时间片里、从起音后 30ms 往正方向量**（wins 那套）；
+#     往回伸长就会把上一个音（更响的那一段）装进来 —— 09-30 实测：往回伸的长窗
+#     读六弦一律低半音，单音旋律（Hey Jude）也从 95 掉到 84。
+WIN_AUTO = os.environ.get("HG_WIN_AUTO", "1") == "1"
+WIN_KAPPA = float(os.environ.get("HG_WIN_KAPPA", "0.5"))
+WIN_MIN_MS = float(os.environ.get("HG_WIN_MIN", "170.67"))   # 产品页那扇窗（8192/48k）
+WIN_MAX_MS = float(os.environ.get("HG_WIN_MAX", "683"))      # 12k 下 8192 点
+JUDGE_AT_MS = 90.0          # 产品页：起音后 90ms 出结论
+WIN_START_MS = 30.0         # 长窗从起音后 30ms 开始（跟弹那边"稳定段 30~170ms"）
+SEMITONE = 2 ** (1 / 12.0) - 1
 #   0.5 会把"学员局部慢了一下"的音错判成漏（Hey Jude 上实测：漏 3 → 真漏只有 2）；
 #   1.2 又太宽，会把真的漏弹硬配到隔壁起音上（真漏从 2 变 1）。0.8 刚好。
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
@@ -607,23 +628,68 @@ def build_slots(score, eps=0.02):
     return slots
 
 
-def _pair_candidates(events, slots, score):
+def slot_slices(slots, scale=1.0):
+    """每一格"自己的时间片"（秒，学员时间）：**这个音到下一个音**的间隔（最后一个音取上一个）。
+
+    为什么是"到下一个音"：低音弦要更长的窗才分得出半音，但那扇长窗必须
+    **贴在音符自己的时间片里、从起音后 30ms 往正方向量**；往回伸长就会把上一个音
+    （更响的那一段）装进来 —— 09-30 实测：往回伸的长窗读六弦一律低半音。
+    所以"这个音自己的时间片" = 这个音自己有多长。
+    """
+    out = []
+    for s, sl in enumerate(slots):
+        if s + 1 < len(slots):
+            g = float(slots[s + 1]["t"]) - float(sl["t"])
+        elif s > 0:
+            g = float(sl["t"]) - float(slots[s - 1]["t"])
+        else:
+            g = 5.0
+        out.append(max(0.05, g) * scale)
+    return out
+
+
+def win_ms_for(midi, slice_sec):
+    """这一格的判定窗长（毫秒）：min(分辨需要的长度, 时间片)，夹在 [WIN_MIN, WIN_MAX]。"""
+    f0 = 440.0 * (2 ** ((int(midi) - 69) / 12.0))
+    need_ms = 1000.0 / (WIN_KAPPA * f0 * SEMITONE)
+    win = min(need_ms, max(0.0, slice_sec) * 1000.0)
+    return round(min(max(win, WIN_MIN_MS), WIN_MAX_MS), 1)
+
+
+def _pair_candidates(events, slots, score, scale=1.0, windows=False):
     """候选配对：按「第几格」的窗口 ∪ 按时间就近的窗口。
 
     一格给出（可能不止一条）配对：格里有几根弦就给几条，判定桥逐条判，
     DP 再按"这一格整体得的平均分"决定配不配 —— 单音格就是一条，和以前完全一样。
+
+    2026-09-30：windows=True（且 HG_WIN_AUTO=1）时，每条配对按"判定窗"那条规则带一个
+    winMs（窗长 = min(分辨需要的长度, 这个音自己的时间片)）。
+    **第一遍（估对齐）必须用 windows=False** —— 粗扫是靠"窗内判过几个"投票选速度比的，
+    窗口一长，低音弦多出来的通过票会把速度比投歪（实测 6415 的 scale 1.104 → 0.939）。
+    不带这个键时判定桥用产品页那扇 170.67ms，行为与以前一字不变。
     """
     pairs, index = [], []
     n, m = len(events), len(slots)
+    slices = slot_slices(slots, scale) if (WIN_AUTO and windows) else None
     for i, e in enumerate(events):
         base = int(round(i * m / float(max(1, n))))
         cand = set(range(max(0, base - PAIR_RANK_WIN), min(m, base + PAIR_RANK_WIN + 1)))
         cand |= {s for s, sl in enumerate(slots) if abs(e["t"] - sl["t"]) <= PAIR_TIME_WIN}
         for s in sorted(cand):
             # 多音格：等这一格的弦都响起来再判（小琶音；单音格不带这个键 = 还是 90ms）
-            at = {"atMsList": JUDGE_AT_MULTI_MS} if len(slots[s]["notes"]) > 1 else {}
+            multi = len(slots[s]["notes"]) > 1
             for k, j in enumerate(slots[s]["notes"]):
                 sn = score[j]
+                if slices is None:
+                    at = {"atMsList": JUDGE_AT_MULTI_MS} if multi else {}
+                else:
+                    wins = [{"atMs": a, "winMs": WIN_MIN_MS}
+                            for a in (JUDGE_AT_MULTI_MS if multi else [JUDGE_AT_MS])]
+                    w = win_ms_for(sn["midi"], slices[s])
+                    if w > WIN_MIN_MS + 1:
+                        # 低音弦：再加一扇"长窗"，贴在音符自己的时间片里（起音后 30ms 起算）
+                        wins.append({"atMs": WIN_START_MS + w, "winMs": w})
+                    at = {"wins": wins}
                 pairs.append({"t": e["t"], "expectedMidi": int(sn["midi"]),
                               "string": sn.get("string"), "fret": sn.get("fret"),
                               "level": e.get("lv"), **at})
@@ -815,6 +881,18 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
             keep = [k for k in range(len(y)) if resid[k] <= max(0.30, med * 2.5)]
             if len(keep) >= 6:
                 scale, offset = _fit_affine([a[k] for k in keep], [y[k] for k in keep])
+        match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset)
+
+    # ③ 判定窗（HG_WIN_AUTO=1 才走）：**对齐已经定下来了**，现在才按
+    #    "窗长 = min(分辨这个音需要的长度, 这个音自己的时间片)" 重配一次、重判一次，
+    #    然后**冻住 scale/offset** 再跑一遍 DP。
+    #    为什么不放到前面对齐之前：粗扫是靠"窗内判过几个"投票选速度比的，
+    #    窗口一长、低音弦多出来的通过票会把速度比投歪（2026-09-30 实测：6415 那条
+    #    的 scale 从 1.104 投成 0.939，分数反而掉到 78）。对齐归对齐、窗口归窗口。
+    #    默认**关**：不开就还是产品页那扇 170.67ms，单音作业数字一字不变。
+    if WIN_AUTO:
+        pairs, index = _pair_candidates(events, slots, score, scale=scale, windows=True)
+        judged = _judge_pairs(pairs, index, audio, jobdir, band, tag="_win")
         match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset)
 
     jd_of = {}
