@@ -47,6 +47,24 @@ KEY_ISSUES = 3
 PAIR_RANK_WIN = 12          # 候选：按"第几个音"的窗口（容忍整体位移）
 PAIR_TIME_WIN = 2.0         # 候选：按时间就近（秒）
 PAIR_MATCH_WIN = 0.8        # 单调 DP 里允许的时间残差（秒）
+# 「接不接这一格」里，**时间偏差的罚系数**（用户 2026-10-08 打回来的那条）：
+#   W = 过的收益 / 不过的代价 - dt * DT_PEN * 音数。
+#   原来是 0.5 → 接一个"偏差 250ms、其实没判过"的烂配 = -0.30-0.125 = -0.425，
+#   比"跳过这一格"（-0.6）还便宜 → DP 当然去接烂配，接完中段整片错开
+#   （实测 音阶-漏音 / 小星星-节奏 的成对「漏7+多7」就是这么来的）。
+# （2026-10-08 扫过 0.5/1.0/1.5/2.0/3.0：对 音阶-漏音、小星星-节奏 一点用没有，
+#   3.0 还更差、双音从 98 掉到 95 → **默认退回 0.5**，只留旋钮备查）
+DT_PEN = float(os.environ.get("HG_DT_PEN", "0.5"))
+# 局部时间模型用几个锚点（span）。中段出现 ±200~280ms 的乱配 = 局部预测歪了，
+# 锚点太少会被几个烂配带着跑；这是 2026-10-08 打的第二个杠杆（见下面 local_preds 调用）。
+WARP_SPAN = int(os.environ.get("HG_WARP_SPAN", "7"))
+# 「双触发」合并（2026-10-08 用户新素材暴露的）：
+#   起音层门槛下，一次拨弦有时会在 130~150ms 内出两个事件（小星星-节奏 那条里
+#   17.73 和 17.86 只差 130ms，而正常间隔是 400ms）。多出来的那个会把 DP 带偏，
+#   相邻几格连着错开（实测格23 的正确起音在 15.744，却被配到 14.944，差 2 格）。
+#   这是**我们配对层**的处理：太挤的事件只留一个（留电平大的那个）。
+# HG_MERGE_MS=0 关掉。
+MERGE_MS = float(os.environ.get("HG_MERGE_MS", "0"))
 # 多音格的判定时刻（试两个，有一个过就算过）：
 #   * 小琶音三根弦相隔约 100ms —— 只在 90ms 判会读到"最后一根还没响"的谱
 #     （实测 `9 11 11`：90ms 过 8/12，170ms 过 12/12）；
@@ -889,7 +907,7 @@ def _dp_match_units(index, judged, events, slots, score, scale, offset, preds=No
         dt = abs(events[i]["t"] - pred(s))
         k = float(len(jds))
         total = sum(2.0 if jd["pass"] else -0.30 for jd in jds)
-        W[(i, s)] = total - dt * 0.5 * k
+        W[(i, s)] = total - dt * DT_PEN * k
     n, m = len(events), len(slots)
     SKIP_E = -0.25
     # 跳过一格的代价按格里的音数算：单音格还是 -0.6（和以前一模一样）
@@ -1009,6 +1027,32 @@ def check_repeat(events, extras, score, scale, offset, audio, jobdir, band):
             "offset": round(off2, 3)}
 
 
+def time_match_count(cells, onsets, win):
+    """只用时间的**单调匹配数**：两边都可跳过，**一个起音只能用一次**。
+
+    为什么拿它挑 scale（2026-10-08 用户素材打回来的关键一条）：
+      * 原来数"判定能过的候选" —— 判定已经被歪掉的窗影响，等于拿结果凑原因；
+      * 改成"每格就近找到起音"的覆盖度 —— **会退化**：scale 越小、谱面越挤，
+        越容易"每格都找到"，实测挑出 0.38/0.44 这种假值（音阶 97→73、452双音 100→69）；
+      * 加上"一个起音只能用一次"就不会退化 —— 这正是用户口径里的"按时间就近绑"。
+    """
+    n, m = len(cells), len(onsets)
+    if not n or not m:
+        return 0
+    prev = [0] * (m + 1)
+    for i in range(n - 1, -1, -1):
+        cur = [0] * (m + 1)
+        for j in range(m - 1, -1, -1):
+            best = cur[j + 1] if cur[j + 1] > prev[j] else prev[j]
+            if abs(cells[i] - onsets[j]) <= win:
+                cand = 1 + prev[j + 1]
+                if cand > best:
+                    best = cand
+            cur[j] = best
+        prev = cur
+    return prev[0]
+
+
 def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     """起音（引擎）→ 配对（我们自己：模型 + 单调 DP）→ 判定（引擎的判定方式）。
 
@@ -1019,6 +1063,19 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     print(run_node("engine_bridge.mjs", audio, events_path, band[0], band[1]).strip())
     ev_json = load_json(events_path)
     events = ev_json.get("events") or []
+    if MERGE_MS > 0 and events:
+        # 双触发合并：按时间过一遍，间隔 < MERGE_MS 的只留电平大的那个（配对层的事，不动起音层）
+        merged = []
+        for e in sorted(events, key=lambda x: float(x["t"])):
+            if merged and (float(e["t"]) - float(merged[-1]["t"])) * 1000 < MERGE_MS:
+                if (e.get("lv") or 0) > (merged[-1].get("lv") or 0):
+                    merged[-1] = e
+                continue
+            merged.append(e)
+        if len(merged) != len(events):
+            print("配对层合并双触发：%d → %d 个起音（<%.0fms 只留一个）"
+                  % (len(events), len(merged), MERGE_MS))
+        events = merged
     # "有没有在弹"的粗量（闸门第 0 条用）：整段里超过噪声线的帧占比
     loud_ratio = ev_json.get("loudRatio")
     if not events:
@@ -1050,6 +1107,12 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
         #   太慢了，学员自会弹快 20~40%。现在放到 **0.50~2.00**（还嫌不够的用环境变量调）。
         SCALE_MIN = float(os.environ.get("HG_SCALE_MIN", "0.50"))
         SCALE_MAX = float(os.environ.get("HG_SCALE_MAX", "2.00"))
+        # ⚠ 挑 scale 的判据：**先用"判定能过的候选最多"**。2026-10-08 试过换成
+        #   "每格就近找到起音的覆盖度"和"一对一单调匹配数"——**两条都退化**：
+        #   scale 越小、谱面越挤进密集区，就越"容易都找到"，实测挑出 0.38 / 0.44
+        #   这种假值（音阶-正常 97→73、452双音 100→69）。**已回退，别再走这两条**。
+        #   真正的问题是"全局一条速度比"根本表达不了他"忽快忽慢 + 停一下"——
+        #   那是**局部/分段时间模型**该管的事（还没做）。
         sc = SCALE_MIN
         while sc <= SCALE_MAX + 1e-9:
             off = t0_e - t0_s * sc
@@ -1095,7 +1158,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     #    而那一格的候选判定其实是 pass（1645 双音那条第 18~22 格整体超前约 440ms 就是这种）。
     if LOCAL_WARP:
         for _ in range(2):
-            preds = local_preds(slots, match, events, scale, offset)
+            preds = local_preds(slots, match, events, scale, offset, span=WARP_SPAN)
             match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset,
                                            preds=preds)
 
@@ -1104,7 +1167,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     #    只补"附近没有起音"的格 —— 附近有起音却没配上，那是配对的事，不在这里治。
     quiet_notes = 0
     if RESCUE:
-        preds = (local_preds(slots, match, events, scale, offset) if LOCAL_WARP
+        preds = (local_preds(slots, match, events, scale, offset, span=WARP_SPAN) if LOCAL_WARP
                  else [float(sl["t"]) * scale + offset for sl in slots])
         slices = slot_slices(slots, scale) if WIN_AUTO else None
         on_t = sorted(float(e["t"]) for e in events)
@@ -1161,7 +1224,7 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
 
     # 诊断（HG_DEBUG_MATCH=1）：把这一轮"哪一格配到了哪一个起音"落盘，排查"明明判过却报漏"用
     if os.environ.get("HG_DEBUG_MATCH") == "1":
-        preds_dbg = (local_preds(slots, match, events, scale, offset) if LOCAL_WARP
+        preds_dbg = (local_preds(slots, match, events, scale, offset, span=WARP_SPAN) if LOCAL_WARP
                      else [float(sl["t"]) * scale + offset for sl in slots])
         dbg = {"scale": round(scale, 4), "offset": round(offset, 4),
                "slots": len(slots), "onsets": len(events),
