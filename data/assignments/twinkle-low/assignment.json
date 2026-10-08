@@ -1,0 +1,36 @@
+{
+ "id": "twinkle-low",
+ "title": "小星星 · 低音版",
+ "artist": "HomeworkGrader",
+ "course": "练习 · 曲目",
+ "lesson": "小星星 · 低音版",
+ "standard": {
+  "title": "Twinkle Twinkle Little Star (low)",
+  "artist": "HomeworkGrader",
+  "tempo": 80.0,
+  "measures": 12,
+  "track_index": 0,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 42,
+  "notes_all": 42,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 12,
+  "source": "E:\\HomeworkGrader\\scores\\practice\\twinkle-low.gp4",
+  "source_kind": "本机生成的练习谱"
+ },
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\twinkle-low.gp4",
+ "ref": "data/assignments/twinkle-low/ref.json",
+ "note": "小星星低音版：整段低一个八度，用 3/4/5 弦（C3~A3）。C=5弦3品 D=4弦空弦 E=4弦2品 F=4弦3品 G=3弦空弦 A=3弦2品。（80 BPM）",
+ "created": "2026-10-08"
+}

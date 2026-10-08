@@ -1,0 +1,36 @@
+{
+ "id": "c-major-scale-1st",
+ "title": "C 大调音阶 · 前三品（E2→G4）",
+ "artist": "HomeworkGrader",
+ "course": "练习 · 基本功",
+ "lesson": "C 大调音阶 · 前三品（E2→G4）",
+ "standard": {
+  "title": "C Major Scale (open position, E2-G4)",
+  "artist": "HomeworkGrader",
+  "tempo": 80.0,
+  "measures": 9,
+  "track_index": 0,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 33,
+  "notes_all": 33,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 9,
+  "source": "E:\\HomeworkGrader\\scores\\practice\\c-major-scale-1st.gp4",
+  "source_kind": "本机生成的练习谱"
+ },
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\c-major-scale-1st.gp4",
+ "ref": "data/assignments/c-major-scale-1st/ref.json",
+ "note": "C 大调音阶第一把位上下行，全程 0~3 品，从 6 弦空弦 E2 到 1 弦 3 品 G4。指法：E2=6弦空弦 F2=6弦1品 G2=6弦3品 A2=5弦空弦 B2=5弦2品 C3=5弦3品 D3=4弦空弦 E3=4弦2品 F3=4弦3品 G3=3弦空弦 A3=3弦2品 B3=2弦空弦 C4=2弦1品 D4=2弦3品 E4=1弦空弦 F4=1弦1品 G4=1弦3品。末音停住再松手。（80 BPM）",
+ "created": "2026-10-08"
+}

@@ -1,0 +1,36 @@
+{
+ "id": "15634125-T3231323",
+ "title": "15634125 · C–G–Am–Em–F–C–Dm–G（分解和弦 T3231323）",
+ "artist": "HomeworkGrader",
+ "course": "练习 · 常见和弦走向",
+ "lesson": "15634125 · C–G–Am–Em–F–C–Dm–G（分解和弦 T3231323）",
+ "standard": {
+  "title": "15634125 C-G-Am-Em-F-C-Dm-G / T3231323",
+  "artist": "HomeworkGrader",
+  "tempo": 80.0,
+  "measures": 8,
+  "track_index": 0,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 64,
+  "notes_all": 64,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 8,
+  "source": "E:\\HomeworkGrader\\scores\\practice\\15634125-T3231323.gp4",
+  "source_kind": "本机生成的练习谱"
+ },
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\15634125-T3231323.gp4",
+ "ref": "data/assignments/15634125-T3231323/ref.json",
+ "note": "常见和弦走向 15634125，用分解和弦 T3231323弹（每和弦一小节，80 BPM）。",
+ "created": "2026-10-08"
+}

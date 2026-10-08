@@ -1,0 +1,36 @@
+{
+ "id": "4536251-dyad-once",
+ "title": "4536251 · F–G–Em–Am–Dm–G–C（双音 T／3／〔1弦+2弦〕／3（每个和弦一遍））",
+ "artist": "HomeworkGrader",
+ "course": "练习 · 常见和弦走向",
+ "lesson": "4536251 · F–G–Em–Am–Dm–G–C（双音 T／3／〔1弦+2弦〕／3（每个和弦一遍））",
+ "standard": {
+  "title": "4536251 F-G-Em-Am-Dm-G-C / dyad-once",
+  "artist": "HomeworkGrader",
+  "tempo": 80.0,
+  "measures": 7,
+  "track_index": 0,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 35,
+  "notes_all": 35,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 7,
+  "source": "E:\\HomeworkGrader\\scores\\practice\\4536251-dyad-once.gp4",
+  "source_kind": "本机生成的练习谱"
+ },
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\4536251-dyad-once.gp4",
+ "ref": "data/assignments/4536251-dyad-once/ref.json",
+ "note": "常见和弦走向 4536251，用双音 T／3／〔1弦+2弦〕／3（每个和弦一遍）弹（每和弦一小节，80 BPM）。",
+ "created": "2026-10-08"
+}

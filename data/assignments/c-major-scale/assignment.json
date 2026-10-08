@@ -1,0 +1,36 @@
+{
+ "id": "c-major-scale",
+ "title": "C 大调音阶 · 两个八度",
+ "artist": "HomeworkGrader",
+ "course": "练习 · 基本功",
+ "lesson": "C 大调音阶 · 两个八度",
+ "standard": {
+  "title": "C Major Scale (2 octaves)",
+  "artist": "HomeworkGrader",
+  "tempo": 80.0,
+  "measures": 8,
+  "track_index": 0,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 29,
+  "notes_all": 29,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 8,
+  "source": "E:\\HomeworkGrader\\scores\\practice\\c-major-scale.gp4",
+  "source_kind": "本机生成的练习谱"
+ },
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\c-major-scale.gp4",
+ "ref": "data/assignments/c-major-scale/ref.json",
+ "note": "C 大调音阶两个八度上下行（C3~C5）。指法：C=5弦3品 D=4弦空弦 E=4弦2品 F=4弦3品 G=3弦空弦 A=3弦2品 B=2弦空弦 C=2弦1品 D=2弦3品 E=1弦空弦 F=1弦1品 G=1弦3品 A=1弦5品 B=1弦7品 C=1弦8品。首音、最高音、末音各停一拍再走。（80 BPM）",
+ "created": "2026-10-08"
+}

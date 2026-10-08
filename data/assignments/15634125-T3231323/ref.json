@@ -1,0 +1,678 @@
+{
+ "meta": {
+  "file": "E:\\HomeworkGrader\\scores\\practice\\15634125-T3231323.gp4",
+  "title": "15634125 C-G-Am-Em-F-C-Dm-G / T3231323",
+  "artist": "HomeworkGrader",
+  "album": "",
+  "tempo": 80.0,
+  "measures": 8,
+  "timeSignatures": [
+   {
+    "measure": 1,
+    "sig": "4/4"
+   }
+  ],
+  "repeats": [
+   {
+    "measure": 1,
+    "open": false,
+    "close": -1
+   },
+   {
+    "measure": 2,
+    "open": false,
+    "close": -1
+   },
+   {
+    "measure": 3,
+    "open": false,
+    "close": -1
+   },
+   {
+    "measure": 4,
+    "open": false,
+    "close": -1
+   },
+   {
+    "measure": 5,
+    "open": false,
+    "close": -1
+   },
+   {
+    "measure": 6,
+    "open": false,
+    "close": -1
+   },
+   {
+    "measure": 7,
+    "open": false,
+    "close": -1
+   },
+   {
+    "measure": 8,
+    "open": false,
+    "close": -1
+   }
+  ],
+  "track": {
+   "index": 0,
+   "name": "Guitar",
+   "strings": 6,
+   "tuning": [
+    "E4",
+    "B3",
+    "G3",
+    "D3",
+    "A2",
+    "E2"
+   ],
+   "tuning_midi": [
+    64,
+    59,
+    55,
+    50,
+    45,
+    40
+   ],
+   "is_percussion": false
+  },
+  "_track_why": "轨名里认出来是吉他",
+  "_track_confident": true,
+  "_tracks": [
+   {
+    "index": 0,
+    "name": "Guitar",
+    "strings": 6,
+    "tuning": [
+     "E4",
+     "B3",
+     "G3",
+     "D3",
+     "A2",
+     "E2"
+    ],
+    "notes": 64,
+    "percussion": false
+   }
+  ],
+  "_track_index": 0
+ },
+ "notes": [
+  {
+   "t": 0.75,
+   "midi": 48,
+   "string": 5,
+   "fret": 3,
+   "measure": 0,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 1.125,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 0,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 1.5,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 0,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 1.875,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 0,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 2.25,
+   "midi": 64,
+   "string": 1,
+   "fret": 0,
+   "measure": 0,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 2.625,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 0,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 3.0,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 0,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 3.375,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 0,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 3.75,
+   "midi": 43,
+   "string": 6,
+   "fret": 3,
+   "measure": 1,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 4.125,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 1,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 4.5,
+   "midi": 59,
+   "string": 2,
+   "fret": 0,
+   "measure": 1,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 4.875,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 1,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 5.25,
+   "midi": 67,
+   "string": 1,
+   "fret": 3,
+   "measure": 1,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 5.625,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 1,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 6.0,
+   "midi": 59,
+   "string": 2,
+   "fret": 0,
+   "measure": 1,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 6.375,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 1,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 6.75,
+   "midi": 45,
+   "string": 5,
+   "fret": 0,
+   "measure": 2,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 7.125,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 7.5,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 2,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 7.875,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 8.25,
+   "midi": 64,
+   "string": 1,
+   "fret": 0,
+   "measure": 2,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 8.625,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 9.0,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 2,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 9.375,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 2,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 9.75,
+   "midi": 40,
+   "string": 6,
+   "fret": 0,
+   "measure": 3,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 10.125,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 3,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 10.5,
+   "midi": 59,
+   "string": 2,
+   "fret": 0,
+   "measure": 3,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 10.875,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 3,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 11.25,
+   "midi": 64,
+   "string": 1,
+   "fret": 0,
+   "measure": 3,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 11.625,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 3,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 12.0,
+   "midi": 59,
+   "string": 2,
+   "fret": 0,
+   "measure": 3,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 12.375,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 3,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 12.75,
+   "midi": 41,
+   "string": 6,
+   "fret": 1,
+   "measure": 4,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 13.125,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 4,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 13.5,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 4,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 13.875,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 4,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 14.25,
+   "midi": 65,
+   "string": 1,
+   "fret": 1,
+   "measure": 4,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 14.625,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 4,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 15.0,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 4,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 15.375,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 4,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 15.75,
+   "midi": 48,
+   "string": 5,
+   "fret": 3,
+   "measure": 5,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 16.125,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 5,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 16.5,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 5,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 16.875,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 5,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 17.25,
+   "midi": 64,
+   "string": 1,
+   "fret": 0,
+   "measure": 5,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 17.625,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 5,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 18.0,
+   "midi": 60,
+   "string": 2,
+   "fret": 1,
+   "measure": 5,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 18.375,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 5,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 18.75,
+   "midi": 50,
+   "string": 4,
+   "fret": 0,
+   "measure": 6,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 19.125,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 6,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 19.5,
+   "midi": 62,
+   "string": 2,
+   "fret": 3,
+   "measure": 6,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 19.875,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 6,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 20.25,
+   "midi": 65,
+   "string": 1,
+   "fret": 1,
+   "measure": 6,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 20.625,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 6,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 21.0,
+   "midi": 62,
+   "string": 2,
+   "fret": 3,
+   "measure": 6,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 21.375,
+   "midi": 57,
+   "string": 3,
+   "fret": 2,
+   "measure": 6,
+   "beat": 7,
+   "dur": 0.375
+  },
+  {
+   "t": 21.75,
+   "midi": 43,
+   "string": 6,
+   "fret": 3,
+   "measure": 7,
+   "beat": 0,
+   "dur": 0.375
+  },
+  {
+   "t": 22.125,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 7,
+   "beat": 1,
+   "dur": 0.375
+  },
+  {
+   "t": 22.5,
+   "midi": 59,
+   "string": 2,
+   "fret": 0,
+   "measure": 7,
+   "beat": 2,
+   "dur": 0.375
+  },
+  {
+   "t": 22.875,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 7,
+   "beat": 3,
+   "dur": 0.375
+  },
+  {
+   "t": 23.25,
+   "midi": 67,
+   "string": 1,
+   "fret": 3,
+   "measure": 7,
+   "beat": 4,
+   "dur": 0.375
+  },
+  {
+   "t": 23.625,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 7,
+   "beat": 5,
+   "dur": 0.375
+  },
+  {
+   "t": 24.0,
+   "midi": 59,
+   "string": 2,
+   "fret": 0,
+   "measure": 7,
+   "beat": 6,
+   "dur": 0.375
+  },
+  {
+   "t": 24.375,
+   "midi": 55,
+   "string": 3,
+   "fret": 0,
+   "measure": 7,
+   "beat": 7,
+   "dur": 0.375
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "id": "hey-jude-full",
+ "title": "Hey Jude（整首）",
+ "artist": "The Beatles",
+ "course": "一对一 · 课后作业",
+ "lesson": "Hey Jude（整首）",
+ "standard": {
+  "title": "Hey Jude",
+  "artist": "The Beatles",
+  "tempo": 76.0,
+  "measures": 24,
+  "track_index": 0,
+  "track_name": "Voice",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "命令行指定 --track 0",
+  "notes": 118,
+  "notes_all": 118,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 24,
+  "source": "E:\\HomeworkGrader\\data\\.gp\\the-beatles-hey_jude.gp3",
+  "source_kind": "老师上传的 .gp"
+ },
+ "gp": "E:\\HomeworkGrader\\data\\.gp\\the-beatles-hey_jude.gp3",
+ "ref": "data/assignments/hey-jude-full/ref.json",
+ "note": "整首版：从第 1 小节弹到第 24 小节（118 个音）。第 1~8 小节那版是 hey-jude-01。",
+ "created": "2026-10-08"
+}

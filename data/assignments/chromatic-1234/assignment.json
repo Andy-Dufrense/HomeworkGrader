@@ -1,0 +1,36 @@
+{
+ "id": "chromatic-1234",
+ "title": "爬格子 · 1234",
+ "artist": "HomeworkGrader",
+ "course": "练习 · 基本功",
+ "lesson": "爬格子 · 1234",
+ "standard": {
+  "title": "Chromatic 1234",
+  "artist": "HomeworkGrader",
+  "tempo": 80.0,
+  "measures": 6,
+  "track_index": 0,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 48,
+  "notes_all": 48,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 6,
+  "source": "E:\\HomeworkGrader\\scores\\practice\\chromatic-1234.gp4",
+  "source_kind": "本机生成的练习谱"
+ },
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\chromatic-1234.gp4",
+ "ref": "data/assignments/chromatic-1234/ref.json",
+ "note": "爬格子：6 弦到 1 弦，每根弦按 1-2-3-4 品上行；再 1 弦到 6 弦，每根弦 4-3-2-1 品下行。全程 8 分音符，右手交替拨弦。（80 BPM）",
+ "created": "2026-10-08"
+}

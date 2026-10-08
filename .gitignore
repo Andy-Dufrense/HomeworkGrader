@@ -32,3 +32,7 @@ web/spectro.html
 web/spots_*.png
 web/listen.html
 data/clips/
+
+# ── 录给我们的素材（用户音频，只在本机放）──────────────────────────────
+# 清单见 录音清单-2026-10-08.md
+demo/

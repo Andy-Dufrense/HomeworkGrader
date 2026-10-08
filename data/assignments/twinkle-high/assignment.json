@@ -1,0 +1,36 @@
+{
+ "id": "twinkle-high",
+ "title": "小星星 · 高音版",
+ "artist": "HomeworkGrader",
+ "course": "练习 · 曲目",
+ "lesson": "小星星 · 高音版",
+ "standard": {
+  "title": "Twinkle Twinkle Little Star (high)",
+  "artist": "HomeworkGrader",
+  "tempo": 80.0,
+  "measures": 12,
+  "track_index": 0,
+  "track_name": "Guitar",
+  "track_tuning": [
+   "E4",
+   "B3",
+   "G3",
+   "D3",
+   "A2",
+   "E2"
+  ],
+  "track_confident": true,
+  "track_why": "轨名里认出来是吉他",
+  "notes": 42,
+  "notes_all": 42,
+  "crop": "",
+  "bar_from": 1,
+  "bar_to": 12,
+  "source": "E:\\HomeworkGrader\\scores\\practice\\twinkle-high.gp4",
+  "source_kind": "本机生成的练习谱"
+ },
+ "gp": "E:\\HomeworkGrader\\scores\\practice\\twinkle-high.gp4",
+ "ref": "data/assignments/twinkle-high/ref.json",
+ "note": "小星星高音版：1 把位，主旋律在 1/2 弦（C4~A4）。C=2弦1品 D=2弦3品 E=1弦空弦 F=1弦1品 G=1弦3品 A=1弦5品。（80 BPM）",
+ "created": "2026-10-08"
+}
