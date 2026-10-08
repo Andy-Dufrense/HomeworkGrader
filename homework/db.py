@@ -37,7 +37,10 @@ create table if not exists submissions (
   aid text, file text, seconds real, job text,
   score real, passed integer,
   ok integer, wrong integer, missing integer, extra integer,
-  verdict text, created_at text
+  verdict text, created_at text,
+  -- graded = 正常批改过；invalid_upload = 上传跟作业对不上（传错文件/没录到吉他），
+  -- 不出报告也不计分，只在这儿留一笔（用户 2026-10-08 定）
+  status text
 );
 create index if not exists idx_sub_aid on submissions(aid, created_at);
 """
@@ -55,6 +58,10 @@ def connect(path=None):
 
 def init(con):
     con.executescript(SCHEMA)
+    # 老库升级：submissions 原来没有 status 这一列（2026-10-08 加）
+    cols = [r[1] for r in con.execute("pragma table_info(submissions)").fetchall()]
+    if "status" not in cols:
+        con.execute("alter table submissions add column status text")
     con.commit()
     return con
 
@@ -77,14 +84,21 @@ def upsert_assignment(con, a):
     con.commit()
 
 
-def record_submission(con, aid, file, seconds, job, page):
+def record_submission(con, aid, file, seconds, job, page, status=None):
     c = page.get("counts") or {}
+    if status is None:
+        g = page.get("gate") or {}
+        if not g:
+            status = "graded"
+        else:
+            # 没弹完和传错文件分开记（用户 2026-10-08：没弹完要有单独的提示）
+            status = "incomplete" if g.get("kind") == "unfinished" else "invalid_upload"
     con.execute(
         "insert into submissions(aid,file,seconds,job,score,passed,ok,wrong,missing,extra,"
-        "verdict,created_at) values(?,?,?,?,?,?,?,?,?,?,?,?)",
+        "verdict,created_at,status) values(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (aid, file, seconds, job, page.get("score"), 1 if page.get("passed") else 0,
          c.get("right"), c.get("wrong"), c.get("missing"), c.get("extra"),
-         page.get("verdict_text"), _now()))
+         page.get("verdict_text"), _now(), status))
     con.commit()
 
 
@@ -115,6 +129,13 @@ def main(argv=None):
             "select * from submissions order by id desc limit 20").fetchall()
         print("最近 %d 次提交：" % len(rows))
         for r in rows:
+            keys = r.keys()
+            flag = (r["status"] if "status" in keys else None) or "graded"
+            if flag != "graded":
+                label = "没弹完" if flag == "incomplete" else "上传不对"
+                print("  %-18s %-22s   ——   %s（%s），不计分 ｜ %s"
+                      % (r["created_at"], (r["file"] or "")[:22], label, flag, r["aid"]))
+                continue
             print("  %-18s %-22s %5s 分 %s ｜ 对%s 错%s 漏%s 多弹%s ｜ %s"
                   % (r["created_at"], (r["file"] or "")[:22], r["score"],
                      "过" if r["passed"] else "没过",

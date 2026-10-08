@@ -320,6 +320,16 @@ h1{font-size:25px;line-height:1.3;margin:0 0 4px;letter-spacing:-.01em}
   padding:14px 16px;border-radius:10px;background:#fbfcfe;border:1px dashed var(--line);
   font-size:14px;color:var(--ink-2);line-height:1.7;
 }
+.upload-hint{
+  padding:18px 20px;border-radius:12px;border:1px solid #f0c48a;background:#fffaf2;
+}
+.upload-hint h3{margin:0 0 10px;font-size:17px;color:#8a5a12}
+.upload-hint p{margin:0 0 8px;font-size:14px;line-height:1.75;color:var(--ink)}
+.upload-hint .hint-sub{font-size:13px;color:var(--ink-2)}
+.upload-hint button{
+  margin-top:6px;min-height:44px;padding:0 18px;border-radius:10px;cursor:pointer;
+  border:1px solid #e0a95e;background:#fff;color:#8a5a12;font-size:15px;
+}
 .ghost{
   width:100%;min-height:48px;margin-top:16px;border:1px solid var(--line);
   border-radius:10px;background:#fff;color:var(--ink);font-size:15px;

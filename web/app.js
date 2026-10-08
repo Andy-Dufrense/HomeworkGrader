@@ -28,6 +28,9 @@ const el = {
   progressCard: $('progressCard'), bar: $('bar'), stage: $('stage'), pipe: $('pipe'),
   resultCard: $('resultCard'), reportMeta: $('reportMeta'),
   noAudio: $('noAudio'), reportBody: $('reportBody'),
+  uploadHint: $('uploadHint'), uploadHintTitle: $('uploadHintTitle'),
+  uploadHintBody: $('uploadHintBody'), uploadHintSub: $('uploadHintSub'),
+  uploadAgain: $('uploadAgain'),
   score: $('score'), verdict: $('verdict'),
   coverage: $('coverage'), accuracy: $('accuracy'), counts: $('counts'),
   summary: $('summary'), process: $('process'), issues: $('issues'),
@@ -356,6 +359,9 @@ el.again.addEventListener('click', () => {
   if (el.uploadCard) el.uploadCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
+// 「重新上传一版」（上传不对那张提示卡上的钮）：和「再交一次」走同一套动作
+if (el.uploadAgain) el.uploadAgain.addEventListener('click', () => el.again.click());
+
 function markPipe(i) {
   [...el.pipe.children].forEach((li, k) => {
     li.classList.toggle('is-done', k < i);
@@ -417,6 +423,21 @@ function render(r) {
     el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
+  // 这次上传跟作业对不上（传错文件 / 没录到吉他）：**不出报告、不计分**，只提示重传。
+  // （用户 2026-10-08 定；判定在服务端 run_assignment.py 的闸门，见那里的 GATE_RATIO）
+  if (r.gate) {
+    show(el.noAudio, false);
+    show(el.reportBody, false);
+    show(el.scoreSection, false);
+    show(el.uploadHint, true);
+    el.uploadHintTitle.textContent = r.gate.title || '这次上传好像不对';
+    el.uploadHintBody.textContent = r.gate.body || '';
+    el.uploadHintSub.textContent = r.gate.sub || '';
+    el.demoNote.textContent = r.note || '';
+    el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  show(el.uploadHint, false);
   show(el.noAudio, false);
   show(el.reportBody, true);
   show(el.scoreSection, true);

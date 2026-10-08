@@ -80,6 +80,13 @@ resetAnalysis();
 const events = [];
 let floor = 0.001;
 let frames = 0;
+// 「有没有在弹」的粗量：整段里"电平超过噪声线"的帧占比。
+// 为什么要有（2026-10-08，用户：9 11 11 是吉他，怎么能说"没听到吉他"）：
+//   拿"起音数太少"当"没听到吉他"的判据是错的 —— 9 11 11（几声就完的小琶音）起音一样少。
+//   实测"响帧占比"能干净分开：说话 17.8% / 咳嗽 13.6% / 别人在弹 12.1%
+//   ↔ 真在弹 67.8%~95.1%（9 11 11 = 83.3%）。中间空着，40% 一刀。
+const SOUND_MIN = 0.03;
+let loudFrames = 0;
 let lastOnsetMs = -1e9;
 let refractoryUntilMs = -1e9;
 const levelHist = [];
@@ -90,6 +97,7 @@ for (let t = 0; t < T_END; t += HOP) {
   const buf = frameAt(t, CAPTURE);
   const lv = rms(buf, buf.length - 1024, 1024);
   frames++;
+  if (lv >= SOUND_MIN) loudFrames++;
 
   // 环境地板：和页面 micTickBody 一样（前 30 帧建底，之后只降不升）
   if (frames <= 30) floor += (Math.min(lv, 0.05) * 0.9 - floor) * 0.3;
@@ -150,6 +158,11 @@ const out = {
   seconds: Number((T_END / 1000).toFixed(2)),
   onsets: events.length,
   unread,
+  // 「有没有在弹」：响帧占比（阈值见上面的 SOUND_MIN）+ 原始计数，给闸门用
+  loudFrames,
+  frames,
+  soundMin: SOUND_MIN,
+  loudRatio: Number((loudFrames / Math.max(1, frames)).toFixed(4)),
   events,
 };
 fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });

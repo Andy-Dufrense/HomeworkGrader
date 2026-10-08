@@ -436,7 +436,14 @@ def grade_submission(task_id, aid, saved_path, name):
             con.close()
         except Exception as e:
             print("  [db] 写库失败（不影响批改）：%s" % e)
-        upd(status="completed", progress=100, stage="批改完成", result=page)
+        if page.get("gate"):
+            # 上传跟作业对不上 / 没弹完：不出报告、不计分（run_assignment.py 的闸门定的）
+            stage = ("这次好像没弹完，已提示重录"
+                     if (page["gate"].get("kind") == "unfinished")
+                     else "这次上传好像不对，已提示重传")
+            upd(status="completed", progress=100, stage=stage, result=page)
+        else:
+            upd(status="completed", progress=100, stage="批改完成", result=page)
     except Exception as e:                                   # 别把线程搞死
         upd(status="failed", stage="批改失败：%s" % e)
 

@@ -115,6 +115,73 @@ RESCUE_MARGIN = float(os.environ.get("HG_RESCUE_MARGIN", "0")) or None
 #   1.2 又太宽，会把真的漏弹硬配到隔壁起音上（真漏从 2 变 1）。0.8 刚好。
 # 及格线（用户 2026-09-29 定：90 分；要临时改可以设 HOMEWORK_PASS_LINE）
 PASS_LINE = int(os.environ.get("HOMEWORK_PASS_LINE", "90"))
+# ── 「货不对板」闸门（用户 2026-10-08 定）────────────────────────────────
+# 作业是学员**自己上传**的，所以会遇到传错文件：另一首歌 / 没录上 / 根本不是吉他。
+# 判据只用**已经算出来的**对齐结果，一行都不碰引擎（Q15/Q29）：
+#     配上率 = 配上的格 ÷ 谱面格
+# 实测（拿现有素材错位上传到 6415 那份作业）：
+#     正解 97% ｜ 另一首歌(Hey Jude) 50% ｜ 别的练习 13% ｜ 人说话/咳嗽 9%
+# → 60% 一刀，正解全在安全区。
+# 判成"对不上"就**不出报告、不计分**（用户 2026-10-08：不影响整体完成度，后台备注一笔）。
+# 话术分两档（口径照隔壁 VirtuCoach `knowledge/teacher_style/04-phrasebook.md` §10：
+#   "是不是传错了？"，并且**不许对学员解释内部数字/技术细节**）：
+#   起音够多 = 他确实在弹，只是不是这一首；起音也没有 = 大概没录到琴。
+# HG_GATE_RATIO=0 关掉闸门。
+GATE_RATIO = float(os.environ.get("HG_GATE_RATIO", "0.6"))
+# 第二道（2026-10-08 加，用户："hey jude 对双音作业，本身应该是完全配不上的啊"）：
+#   只卡"配上率"是不够的 —— 节奏相近的异曲照样能配上 70%+（实测 Hey Jude 对双音练习
+#   配上 23/32 格 = 72%，局部偏差还只有 90ms，配得"很像"）。
+#   真正能分开的是**通过率** = 弹对的音数 ÷ 谱面音数（就是分数）：
+#       正解 97~98% ｜ 学员同一走向但弹错几个音 78% ｜ 另一首歌 42~44% ｜ 说话 6%
+#   → 60% 一刀：把"完全配不上"的挡掉，同时**保留**"同一走向弹错某几个音"的逐音报告
+#     （那种正是用户要报的：要弹 53231323、弹成 54231323 也要说清哪一下错）。
+# HG_GATE_PASS_RATIO=0 只留第一道。
+GATE_PASS_RATIO = float(os.environ.get("HG_GATE_PASS_RATIO", "0.6"))
+# 第三档「没弹完」（用户 2026-10-08："我认为要设置没弹完提示"）：学员录了一半就停了。
+#   和"对不上"的区别：**配上的那部分音是对的**（精度高），只是后面的格一个都没配上。
+#   实测（把正解截断）：截到 5.9s → 覆盖 47%、精度 100%；截到 8.8s → 覆盖 66%、精度 95%。
+#   而"交错了作业"的那些：精度 57~62% 就下来了（Hey Jude 对双音 57%、6415 对小星星 62%），
+#   所以拿"精度 ≥ 80%"把它们分开。起音够多（≥ 谱面音数的 80%）的也不算"没弹完" ——
+#   那种是"弹得不对"，不是"没弹完"。
+GATE_ACC_RATIO = float(os.environ.get("HG_GATE_ACC", "0.6"))      # 精度门：配上的格里对不上的多
+GATE_START_RATIO = float(os.environ.get("HG_GATE_START", "0.25"))  # 起音少到这条线以下 = 几乎没弹
+GATE_FULL_RATIO = float(os.environ.get("HG_GATE_FULL", "0.8"))     # 起音够多就不算"没弹完"
+GATE_UNFIN_ACC = float(os.environ.get("HG_GATE_UNFIN_ACC", "0.8"))  # "没弹完"那档：配上的部分要准
+# 「有没有在弹」= 整段里**超过噪声线的帧占比**（起音桥算的 loudRatio）。
+#   为什么不用"起音数太少"当判据（2026-10-08，用户：9 11 11 是吉他，怎么能说"没听到吉他"）：
+#   9 11 11 是几声就完的小琶音，起音一样只有 4 个 —— 拿它比就误判。
+#   实测响帧占比：说话 17.8% / 咳嗽 13.6% / 别人在弹 12.1% ↔ 真在弹 67.8%~95.1%
+#   （9 11 11 = 83.3%、双音 87.6%、6415 94~95%）。中间空着，40% 一刀。
+# 低于这条线才说"没录到演奏"；高过它但起音还是少 → 那是"不是这份作业"。
+GATE_SOUND = float(os.environ.get("HG_GATE_SOUND", "0.4"))
+GATE_HINTS = {
+    "other_song": {
+        "kind": "other_song",
+        "title": "这次上传的好像不是这份作业",
+        "body": "我这边听到的演奏跟这份作业对不上，更像是另外一首曲子（或者另一条练习）。"
+                "是不是传错文件了？",
+        "sub": "确认一下要交的是这一份；如果你刚才弹的确实是它，那就是这一遍跟谱面对上的音太少"
+               " —— 重录一版再传。这次不计分，也不当你没交。",
+    },
+    # 注意：这一档**不能说"没听到吉他"** —— 9 11 11 那种几声就完的练习，
+    # 起音同样少但确实是吉他（用户 2026-10-08 指出）。所以判据换成"响帧占比"，
+    # 话术也只说"几乎没录到演奏"，不替学员断定录音里没有吉他。
+    "no_playing": {
+        "kind": "no_playing",
+        "title": "这次好像没录到演奏",
+        "body": "这段录音里几乎一直是安静/环境声，只零星听到几下，跟这份作业对不上。"
+                "是不是传错了，或者没录上？",
+        "sub": "录的时候：手机离琴 30~50cm、别挡着麦克风、按下录音先空 4 秒再弹；"
+               "环境安静一点，别外放伴奏。",
+    },
+    # 这一档的 body 会在下面按"停在第几小节 / 从第几小节才开始"动态换
+    "unfinished": {
+        "kind": "unfinished",
+        "title": "这次好像没弹完",
+        "body": "这次没有听到完整的一段。",
+        "sub": "整段从头到尾再录一遍 —— 这次不计分，也不当你没交。",
+    },
+}
 # 过程提醒的"明显"门槛（Q9 / Q18 的建议值，用户说改就改）
 TEMPO_TOL = 0.30          # 整体速度差超过 ±30% 才提（用户 2026-09-29 定）
 PAUSE_OVER_SEC = 1.0      # 比谱面多停 1 秒以上，且
@@ -946,9 +1013,14 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     """
     events_path = os.path.join(jobdir, "events.json")
     print(run_node("engine_bridge.mjs", audio, events_path, band[0], band[1]).strip())
-    events = load_json(events_path)["events"]
+    ev_json = load_json(events_path)
+    events = ev_json.get("events") or []
+    # "有没有在弹"的粗量（闸门第 0 条用）：整段里超过噪声线的帧占比
+    loud_ratio = ev_json.get("loudRatio")
     if not events:
-        raise SystemExit("这一段录音里一个起音都没检出来")
+        # 静音/极度安静也是"上传不对"的一种，不能在这里硬失败 —— 照常往下走，
+        # 让闸门去出"这次好像没录到演奏"那句话（2026-10-08）。
+        print("⚠ 这一段里一个起音都没检出来（响帧占比 %s）—— 交给闸门判。" % loud_ratio)
 
     # 谱面 → 「格」：同一时刻响的几根弦算一格（单音作业里一格就是一个音）
     slots = build_slots(score)
@@ -963,17 +1035,21 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     # ① 整体模型：以"第一声"为锚（用户口径：从第一个明显的音开始算第一个音），
     #    速度比粗扫，挑窗内判过最多的那一档
     passed = {(i, s) for (i, s, _k), jd in zip(index, judged) if jd["pass"]}
-    t0_e, t0_s = events[0]["t"], slots[0]["t"]
-    best = (-1, 1.0, t0_e - t0_s)
-    sc = 0.80
-    while sc <= 1.6001:
-        off = t0_e - t0_s * sc
-        n = sum(1 for (i, s) in passed
-                if abs(events[i]["t"] - (slots[s]["t"] * sc + off)) <= 0.35)
-        if n > best[0]:
-            best = (n, sc, off)
-        sc += 0.02
-    hits, scale, offset = best
+    if events:
+        t0_e, t0_s = events[0]["t"], slots[0]["t"]
+        best = (-1, 1.0, t0_e - t0_s)
+        sc = 0.80
+        while sc <= 1.6001:
+            off = t0_e - t0_s * sc
+            n = sum(1 for (i, s) in passed
+                    if abs(events[i]["t"] - (slots[s]["t"] * sc + off)) <= 0.35)
+            if n > best[0]:
+                best = (n, sc, off)
+            sc += 0.02
+        hits, scale, offset = best
+    else:
+        # 一个起音都没有（静音 / 根本没录上）：不用拟合，交给闸门出"没录到演奏"
+        hits, scale, offset = 0, 1.0, 0.0
 
     # ② DP → 用配对结果重拟合"位移+速度比" → 再 DP（两轮就收敛）
     match, extra = _dp_match_units(index, judged, events, slots, score, scale, offset)
@@ -1161,6 +1237,12 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
             "extra": len(extra), "hit_window": hits, "candidates": len(pairs),
             "onsets_list": events, "weak_confirmed": weak,
             "quiet_rescued": quiet,
+            "loud_ratio": loud_ratio,          # 响帧占比（闸门第 0 条）
+            # 闸门（货不对板）要用：**哪些格配上了** + 每一格在第几小节（1 起）
+            # （main 里拿不到 match/slots，这两个是专门给它导出的）
+            "matched_slots": sorted(int(s) for s in match),
+            "slot_measure": [int(score[sl["notes"][0]].get("measure") or 0) + 1
+                             for sl in slots],
             "repeat": check_repeat(events, extra, score, scale, offset,
                                    audio, jobdir, band)}
     # 明显停顿：相邻两个"配上的"音，学员这边的间隔比**谱面这一处该有的间隔**长很多。
@@ -1601,6 +1683,99 @@ def main(argv=None):
                     "——所以漏一个音只会报一处漏，不会一路错位。"
                     "得分 = 弹对的音 ÷ 本次作业的音数（%d/%d）。" % (counts["ok"], len(score)),
         }
+        # ── 「货不对板」闸门：配上率太低就别出报告（用户 2026-10-08 定）──────
+        gate = None
+        if GATE_RATIO > 0:
+            g_slots = int(pinfo["slots"] or 0)
+            # ⚠ 用 **格数**（slots_matched），不是音数（matched）：双音格里一格两根弦，
+            #    拿音数除以格数会算出 122% 这种不可能的值（2026-10-08 踩过）。
+            g_matched = int(pinfo["slots_matched"] or 0)
+            g_onsets = int(pinfo["onsets"] or 0)
+            g_notes = len(score)
+            g_ratio = g_matched / float(max(1, g_slots))          # 覆盖：配上多少格
+            # 精度：配上的格里，音对的比例（双音格按音数算，所以用 matched 这个音数）
+            g_acc = float(counts.get("ok") or 0) / float(max(1, int(pinfo["matched"] or 0)))
+            g_pass = float(counts.get("ok") or 0) / float(max(1, len(score)))
+            # 缺失的格是不是"连着的一段"（贴着头或尾）—— 没弹完的典型形状
+            g_hit = set(int(s) for s in (pinfo.get("matched_slots") or []))
+            g_missing = [s for s in range(g_slots) if s not in g_hit]
+            # "没弹完"的形状 = **有一端缺了一截**（最后一个配上的格之后、或者第一个配上的格
+            # 之前，缺的格数 ≥ 全长的 10%）。不要求严丝合缝地连续 —— 实测截断样本中间
+            # 还会零星缺几个（2026-10-08 两版都死在这条上：先要求"完全连续"，
+            # 再要求"70% 集中在端点"，都被那条 30% 截断样本打回来）。
+            g_head = sum(1 for s in g_missing if s < min(g_hit)) if g_hit else len(g_missing)
+            g_tail = sum(1 for s in g_missing if s > max(g_hit)) if g_hit else len(g_missing)
+            g_block = max(g_head, g_tail) >= max(2, 0.1 * g_slots)
+            g_kind = g_why = None
+            g_loud = pinfo.get("loud_ratio")
+            if (g_loud is None and g_onsets < max(8.0, GATE_START_RATIO * g_notes)) \
+                    or (g_loud is not None and g_loud < GATE_SOUND):
+                g_kind, g_why = "no_playing", "quiet"         # 整段几乎没声音 / 没录上
+            elif g_onsets < max(8.0, GATE_START_RATIO * g_notes):
+                g_kind, g_why = "other_song", "few"           # 有声音但起音太少：不是这份作业
+            elif g_acc < GATE_ACC_RATIO:
+                g_kind, g_why = "other_song", "acc"           # 配上的格里音也大多不对
+            elif (g_block and g_ratio < 0.9 and g_acc >= GATE_UNFIN_ACC
+                  and g_onsets < GATE_FULL_RATIO * g_notes and g_hit):
+                g_kind, g_why = "unfinished", "partial"       # 弹了一半
+            elif g_pass < GATE_PASS_RATIO:
+                g_kind, g_why = "other_song", "pass"          # 对上的音太少
+            elif g_ratio < GATE_RATIO:
+                g_kind, g_why = "other_song", "pair"          # 压根没配上
+            if g_kind:
+                gate = dict(GATE_HINTS[g_kind])
+                if g_kind == "unfinished":
+                    bars = pinfo.get("slot_measure") or []
+                    ms = sorted(g_hit)
+
+                    def _bar(s):
+                        return int(bars[s]) if s < len(bars) else 0
+
+                    if 0 in set(g_missing):
+                        gate["body"] = ("这次是从第 %d 小节才开始听到的"
+                                        "（前面那一小段没弹、或者没录上）。" % _bar(ms[0]))
+                    else:
+                        gate["body"] = ("这次听到第 %d 小节就停了"
+                                        "（后面那一小段没有接着弹）。" % _bar(ms[-1]))
+                gate.update({"ratio": round(g_ratio, 3), "matched": g_matched,
+                             "slots": g_slots, "onsets": g_onsets,
+                             "loud_ratio": g_loud,
+                             "acc": round(g_acc, 3), "pass_ratio": round(g_pass, 3),
+                             "why": g_why, "threshold": GATE_RATIO,
+                             "pass_threshold": GATE_PASS_RATIO,
+                             "acc_threshold": GATE_ACC_RATIO,
+                             "score_if_graded": sc,          # 只留档，不给用户看
+                             "counts": dict(counts)})
+
+        if gate:
+            # result.json 留完整判定（我们自己查问题用）+ 一个 gate 标记；
+            # **page.json**（学员看到的那份）只有提示：不给分、不给问题清单。
+            result["gate"] = {k: v for k, v in gate.items()
+                              if k not in ("title", "body", "sub")}
+            with io.open(os.path.join(jobdir, "result.json"), "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=1)
+            page = {
+                "gate": gate, "score": None, "passed": None, "pass_line": PASS_LINE,
+                "counts": {}, "issues": [], "key_issues": [], "more_issues": [],
+                "summary": gate["body"], "verdict_text": gate["body"],
+                "process": [], "coverage": None, "accuracy": None,
+                "issue_labels": IT.LABELS, "issue_total": 0,
+                "standard": standard,
+                "ref_crop": crop_desc, "ref_notes": len(score),
+                "note": ("这次没有出报告、也没有计分："
+                         + ("录音没弹完。" if gate["kind"] == "unfinished"
+                            else "这份录音跟作业对不上。")),
+            }
+            print("")
+            print("=" * 70)
+            print("⚠ 不出报告（%s / %s）：配上 %d/%d 格 = %.0f%%｜精度 %.0f%%"
+                  "｜弹对 %d/%d 音 = %.0f%%｜起音 %d"
+                  % (gate["kind"], gate["why"], g_matched, g_slots, 100 * g_ratio,
+                     100 * g_acc, counts.get("ok") or 0, len(score), 100 * g_pass,
+                     g_onsets))
+            print("  %s" % gate["title"])
+            print("  %s" % gate["body"])
+            print("  → 不出报告、不计分（后台已备注这次上传不对）")
         with io.open(os.path.join(jobdir, "page.json"), "w", encoding="utf-8") as f:
             json.dump(page, f, ensure_ascii=False, indent=1)
         print("结果已写到 %s" % os.path.join(jobdir, "result.json"))

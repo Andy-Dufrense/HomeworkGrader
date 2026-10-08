@@ -117,6 +117,15 @@
 
     <div class="noaudio" id="noAudio" hidden>—</div>
 
+    <!-- 上传不对（传错文件 / 没录到吉他）：不出报告、不计分，只提示重录
+         （用户 2026-10-08 定；话术口径照隔壁 VirtuCoach 04-phrasebook §10） -->
+    <div class="upload-hint" id="uploadHint" hidden>
+      <h3 id="uploadHintTitle">—</h3>
+      <p id="uploadHintBody">—</p>
+      <p class="hint-sub" id="uploadHintSub">—</p>
+      <button id="uploadAgain" type="button">重新上传一版</button>
+    </div>
+
     <div id="reportBody">
     <div class="score-row">
       <div class="score-box">
