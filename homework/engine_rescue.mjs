@@ -162,9 +162,15 @@ for (let t = 0; t < (AUDIO.length / SR) * 1000; t += HOP) {
     flux, hfFlux, hfBandRise: hfBand, lowBandRise: lowBand, shapeFlux: shape,
     repeatSame: false,
   }).onset;
+  // 「有没有新拨一下」的证据（用户 2026-10-08 新素材打回来的那条）：
+  //   T3231323 这种分解型，上一个音**还在响**，这一下的电平往往**没有抬头**
+  //   （实测 15634125-正常 那 4 处漏：lv 0.15 / lag 0.16 → 抬 1.0 倍，判不过），
+  //   但**瞬态证据是清楚的**：flux 0.29~0.37、hfBand 1.6~7.9、shape 0.15~0.38。
+  //   所以"电平抬头"和"瞬态抬头"**二者居一即可**（余响只会往下掉，不会给出这种 flux/hf/shape）。
+  const transient = flux > 0.25 && hfBand > REL_HF && shape > 0.10;
   const relaxed = lv > Math.max(0.05, gate * REL_GATE)
-    && hfBand > REL_HF && lowBand > REL_LOW && lv > lagged * REL_RISE
-    && shape > 0.02;
+    && hfBand > REL_HF && lowBand > REL_LOW && shape > 0.02
+    && (lv > lagged * REL_RISE || transient);
   frameInfo.push({ t: t / 1000, lv, gate, lagged, hfBand, lowBand, flux, shape, strict, relaxed });
   if (process.env.HG_RESCUE_DEBUG === '1') {
     dbgRows.push(`  t=${(t / 1000).toFixed(3)} lv=${lv.toFixed(4)} gate=${gate.toFixed(4)}`

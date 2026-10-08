@@ -1736,6 +1736,10 @@ def main(argv=None):
                 g_kind, g_why = "unfinished", "partial"       # 弹了一半
             elif g_acc < GATE_ACC_RATIO:
                 g_kind, g_why = "other_song", "acc"           # 配上的格里音也大多不对
+            elif g_pass < GATE_PASS_RATIO:
+                # 这一条要**排在"没弹完"之后**：磕巴着只弹一半的（通过率 48%）走"没弹完"，
+                # 而"交错了作业"（对上的音很少、起音又够多）走这里 —— 2026-10-08 两头都验过。
+                g_kind, g_why = "other_song", "pass"          # 对上的音太少
             elif g_ratio < GATE_RATIO:
                 g_kind, g_why = "other_song", "pair"          # 压根没配上
             if g_kind:
