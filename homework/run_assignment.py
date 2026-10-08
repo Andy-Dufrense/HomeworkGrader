@@ -146,7 +146,11 @@ GATE_PASS_RATIO = float(os.environ.get("HG_GATE_PASS_RATIO", "0.6"))
 GATE_ACC_RATIO = float(os.environ.get("HG_GATE_ACC", "0.6"))      # 精度门：配上的格里对不上的多
 GATE_START_RATIO = float(os.environ.get("HG_GATE_START", "0.25"))  # 起音少到这条线以下 = 几乎没弹
 GATE_FULL_RATIO = float(os.environ.get("HG_GATE_FULL", "0.8"))     # 起音够多就不算"没弹完"
-GATE_UNFIN_ACC = float(os.environ.get("HG_GATE_UNFIN_ACC", "0.8"))  # "没弹完"那档：配上的部分要准
+# "没弹完"那档原来要求"配上的部分精度 ≥80%"，是为了跟"交错了作业"分开；但用户 2026-10-08
+# 的 `爬格子-磕巴`（就是弹得磕巴、只弹了前半段）把它顶掉了 —— 那条精度没那么高。
+# 现在靠"起音数 < 谱面音数×80%"+"有一端缺一截"这两条分开就够（20 条负面靶子复核过），
+# 精度门槛降到 0.5 只用来挡"完全对不上"的。
+GATE_UNFIN_ACC = float(os.environ.get("HG_GATE_UNFIN_ACC", "0.5"))  # "没弹完"那档：配上的部分别太离谱
 # 「有没有在弹」= 整段里**超过噪声线的帧占比**（起音桥算的 loudRatio）。
 #   为什么不用"起音数太少"当判据（2026-10-08，用户：9 11 11 是吉他，怎么能说"没听到吉他"）：
 #   9 11 11 是几声就完的小琶音，起音一样只有 4 个 —— 拿它比就误判。
@@ -1038,8 +1042,16 @@ def pair_pipeline(audio, score, jobdir, band=(70.0, 1200.0), tempo=None):
     if events:
         t0_e, t0_s = events[0]["t"], slots[0]["t"]
         best = (-1, 1.0, t0_e - t0_s)
-        sc = 0.80
-        while sc <= 1.6001:
+        # 速度比搜索范围（学员时间 / 谱面时间）。
+        # ⚠ 2026-10-08 用户新录的素材打回一次：原来只有 **0.80~1.60**，而
+        #   `C调音阶E2-G4-正常` 拟合到 **0.8006**、`hey jude-错误` 到 **0.7996** ——
+        #   都**顶在下界上**，等于"对齐没配上"，后面全崩（音阶 64 分、heyjude 被当成没弹完）。
+        #   原因很直白：练习谱是四分音符 80BPM（0.75 秒一个音），对音阶/爬格子/小星星这种
+        #   太慢了，学员自会弹快 20~40%。现在放到 **0.50~2.00**（还嫌不够的用环境变量调）。
+        SCALE_MIN = float(os.environ.get("HG_SCALE_MIN", "0.50"))
+        SCALE_MAX = float(os.environ.get("HG_SCALE_MAX", "2.00"))
+        sc = SCALE_MIN
+        while sc <= SCALE_MAX + 1e-9:
             off = t0_e - t0_s * sc
             n = sum(1 for (i, s) in passed
                     if abs(events[i]["t"] - (slots[s]["t"] * sc + off)) <= 0.35)
@@ -1692,6 +1704,7 @@ def main(argv=None):
             g_matched = int(pinfo["slots_matched"] or 0)
             g_onsets = int(pinfo["onsets"] or 0)
             g_notes = len(score)
+            g_matched_notes = int(pinfo["matched"] or 0)   # ???**??**
             g_ratio = g_matched / float(max(1, g_slots))          # 覆盖：配上多少格
             # 精度：配上的格里，音对的比例（双音格按音数算，所以用 matched 这个音数）
             g_acc = float(counts.get("ok") or 0) / float(max(1, int(pinfo["matched"] or 0)))
@@ -1713,13 +1726,16 @@ def main(argv=None):
                 g_kind, g_why = "no_playing", "quiet"         # 整段几乎没声音 / 没录上
             elif g_onsets < max(8.0, GATE_START_RATIO * g_notes):
                 g_kind, g_why = "other_song", "few"           # 有声音但起音太少：不是这份作业
-            elif g_acc < GATE_ACC_RATIO:
-                g_kind, g_why = "other_song", "acc"           # 配上的格里音也大多不对
-            elif (g_block and g_ratio < 0.9 and g_acc >= GATE_UNFIN_ACC
+            # ⚠ 「没弹完」要排在"精度/通过率"前面（用户 2026-10-08）：
+            #   磕巴着只弹了一半的那种，精度也不高 —— 但它**是这份作业、只是没弹完**，
+            #   应该报"没弹完 + 弹过那一段的对错"，而不是"不是这份作业"。
+            #   会不会误伤"交错了作业"？靠两条挡着：① 起音数 < 谱面音数×80%（交错作业起音够多）
+            #   ② 缺失的格必须"集中在一端"（交错作业是零散的）。20 条负面靶子复核过。
+            elif (g_ratio < 0.9 and g_acc >= GATE_UNFIN_ACC
                   and g_onsets < GATE_FULL_RATIO * g_notes and g_hit):
                 g_kind, g_why = "unfinished", "partial"       # 弹了一半
-            elif g_pass < GATE_PASS_RATIO:
-                g_kind, g_why = "other_song", "pass"          # 对上的音太少
+            elif g_acc < GATE_ACC_RATIO:
+                g_kind, g_why = "other_song", "acc"           # 配上的格里音也大多不对
             elif g_ratio < GATE_RATIO:
                 g_kind, g_why = "other_song", "pair"          # 压根没配上
             if g_kind:
@@ -1734,9 +1750,27 @@ def main(argv=None):
                     if 0 in set(g_missing):
                         gate["body"] = ("这次是从第 %d 小节才开始听到的"
                                         "（前面那一小段没弹、或者没录上）。" % _bar(ms[0]))
-                    else:
+                    elif g_block:
                         gate["body"] = ("这次听到第 %d 小节就停了"
                                         "（后面那一小段没有接着弹）。" % _bar(ms[-1]))
+                    else:
+                        # 缺失不集中在某一端（配对可能把半截演奏"拉伸"配到整首）：
+                        # 就别说"停在第几小节"，只说"只弹了一部分"（2026-10-08 爬格子-磕巴）
+                        gate["body"] = ("这次只弹了一部分：总共 %d 个音，只听到 %d 个"
+                                        "（到第 %d 小节附近）。" % (g_notes, g_matched_notes,
+                                                                    _bar(ms[-1])))
+                    # 用户 2026-10-08：「没弹完是对的，但**也要报出弹的地方对不对**」——
+                    # 所以"没弹完"不光给提示，还把**弹过的那一段**的对错摆出来
+                    # （没配上的那些格就是"没弹"，不算错；只列弹错的那几处）。
+                    gate["played"] = {
+                        "ok": int(counts.get("ok") or 0),
+                        "wrong": int(counts.get("wrong_note") or 0),
+                        "extra": int(counts.get("extra") or 0),
+                        "at_bar": _bar(ms[-1] if 0 not in set(g_missing) else ms[0]),
+                        "issues": [{"title": g.get("title"), "detail": g.get("detail")}
+                                   for g in groups
+                                   if ((g.get("items") or [{}])[0].get("kind") == "wrong_note")][:3],
+                    }
                 gate.update({"ratio": round(g_ratio, 3), "matched": g_matched,
                              "slots": g_slots, "onsets": g_onsets,
                              "loud_ratio": g_loud,

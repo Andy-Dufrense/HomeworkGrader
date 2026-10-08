@@ -68,10 +68,14 @@ PATTERNS = {
     # 以前那两条 dyad-t3 / dyad-t2（根音＋三弦 / 根音＋二弦 一起、每拍一下）
     # 是拍脑袋生成的，跟任何真实练习都对不上，已删。
     "dyad": ["T", "3", ("1", "2"), "3", "T", "3", ("1", "2"), "3"],
+    # 双音型（每个和弦**只走一遍**）：用户 2026-10-08 录的 `4536251-正常-双音` 就是这个 ——
+    # "双音，每个和弦只弹一次节奏型"。（`dyad` 是每个和弦两遍，见上面那条。）
+    "dyad-once": ["T", "3", ("1", "2"), "3"],
 }
 # 给报告/作业名用的中文说法（.gp 的标题必须是 ASCII，所以键用英文）
 PATTERN_LABEL = {"T3231323": "分解和弦 T3231323",
-                 "dyad": "双音 T／3／〔1弦+2弦〕／3（一小节走两遍）"}
+                 "dyad": "双音 T／3／〔1弦+2弦〕／3（一小节走两遍）",
+                 "dyad-once": "双音 T／3／〔1弦+2弦〕／3（每个和弦一遍）"}
 
 # 常见和弦走向（每个和弦一小节）
 PROGRESSIONS = {
@@ -79,6 +83,9 @@ PROGRESSIONS = {
     "6415":     ["Am", "F", "C", "G"],
     "4536251":  ["F", "G", "Em", "Am", "Dm", "G", "C"],
     "15634145": ["C", "G", "Am", "Em", "F", "C", "F", "G"],   # 卡农进行
+    # 2026-10-08 用户要的：15634125（卡农进行，最后两下换成 Dm–G）。
+    # 他录的 4 条 `15634125-*` 说的就是这个走向。
+    "15634125": ["C", "G", "Am", "Em", "F", "C", "Dm", "G"],
     "1625":     ["C", "Am", "Dm", "G"],
 }
 
@@ -227,10 +234,13 @@ def cmd_gp(args):
 def cmd_progressions(args):
     made = []
     combos = [(name, args.pattern) for name in PROGRESSIONS]
-    # 双音：1645 / 6415 各一份（型按真录音：一小节 T/3/〔1+2〕/3 走两遍）
+    # 双音：1645 / 6415 / 15634125 各一份（型按真录音：一小节 T/3/〔1+2〕/3 走两遍）；
+    # 4536251 那份用户录的是"每个和弦只走一遍" → 用 dyad-once。
     if not args.no_dyads:
-        for name in ("1645", "6415"):
-            combos.append((name, "dyad"))
+        combos += [("1645", "dyad"), ("6415", "dyad"),
+                   ("15634125", "dyad"), ("4536251", "dyad-once")]
+    if args.only:                     # 只生成某一条走向（别把别的谱子重写一遍）
+        combos = [(n, p) for n, p in combos if n == args.only]
     for name, pat in combos:
         chords = PROGRESSIONS[name]
         aid = "%s-%s" % (name, slug(pat))
@@ -297,6 +307,7 @@ def main(argv=None):
     p.add_argument("--pattern", default="T3231323", choices=sorted(PATTERNS))
     p.add_argument("--tempo", type=int, default=80)
     p.add_argument("--no-dyads", action="store_true", help="不生成双音那几条")
+    p.add_argument("--only", default="", help="只生成某一条走向，如 15634125")
     p.set_defaults(func=cmd_progressions)
 
     l = sub.add_parser("list", help="列出已登记的作业")

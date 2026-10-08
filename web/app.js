@@ -30,6 +30,7 @@ const el = {
   noAudio: $('noAudio'), reportBody: $('reportBody'),
   uploadHint: $('uploadHint'), uploadHintTitle: $('uploadHintTitle'),
   uploadHintBody: $('uploadHintBody'), uploadHintSub: $('uploadHintSub'),
+  uploadHintPlayed: $('uploadHintPlayed'),
   uploadAgain: $('uploadAgain'),
   score: $('score'), verdict: $('verdict'),
   coverage: $('coverage'), accuracy: $('accuracy'), counts: $('counts'),
@@ -433,6 +434,19 @@ function render(r) {
     el.uploadHintTitle.textContent = r.gate.title || '这次上传好像不对';
     el.uploadHintBody.textContent = r.gate.body || '';
     el.uploadHintSub.textContent = r.gate.sub || '';
+    // 「没弹完」还要把弹过那一段的对错摆出来（用户 2026-10-08 定）
+    const p = r.gate.played;
+    if (p) {
+      const head = '你弹过的那一段（到第 ' + p.at_bar + ' 小节）：'
+        + '对 <b>' + p.ok + '</b> ｜ 弹错 <b>' + p.wrong + '</b>'
+        + (p.extra ? ' ｜ 多弹 <b>' + p.extra + '</b>' : '');
+      const list = (p.issues || []).map(it =>
+        '<li>' + esc(it.title) + ' —— ' + esc(it.detail) + '</li>').join('');
+      el.uploadHintPlayed.innerHTML = head + (list ? '<ul>' + list + '</ul>' : '');
+      show(el.uploadHintPlayed, true);
+    } else {
+      show(el.uploadHintPlayed, false);
+    }
     el.demoNote.textContent = r.note || '';
     el.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
